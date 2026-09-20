@@ -87,6 +87,10 @@ export const orderService = {
     product?: Order['product'];
   }): Promise<Order> {
     const orderNumber = generateOrderNumber();
+    const sessionCreatedAt = new Date().toISOString();
+    // 10-minute payment session window
+    const sessionExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
     const newOrder: Order = {
       id: 'ord-' + Date.now(),
       order_number: orderNumber,
@@ -97,8 +101,10 @@ export const orderService = {
       total_amount: orderPayload.total_amount,
       customization: orderPayload.customization,
       order_status: 'PENDING_PAYMENT',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      payment_session_created_at: sessionCreatedAt,
+      payment_session_expires_at: sessionExpiresAt,
+      created_at: sessionCreatedAt,
+      updated_at: sessionCreatedAt,
       customer: orderPayload.customer,
       product: orderPayload.product,
       payment: {
@@ -106,8 +112,8 @@ export const orderService = {
         order_id: 'ord-' + Date.now(),
         amount: orderPayload.total_amount,
         payment_status: 'PENDING',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: sessionCreatedAt,
+        updated_at: sessionCreatedAt,
       },
     };
 
@@ -124,6 +130,8 @@ export const orderService = {
             total_amount: orderPayload.total_amount,
             customization: orderPayload.customization,
             order_status: 'PENDING_PAYMENT',
+            payment_session_created_at: sessionCreatedAt,
+            payment_session_expires_at: sessionExpiresAt,
           }])
           .select()
           .single();
@@ -189,6 +197,74 @@ export const orderService = {
     };
     saveLocalOrders(current);
     return current[index];
+  },
+
+  /**
+   * Ensures an order has a valid 10-minute payment session and evaluates expiration
+   */
+  async ensurePaymentSession(orderId: string): Promise<Order | null> {
+    const order = await this.getById(orderId);
+    if (!order) return null;
+
+    let modified = false;
+    let currentOrder = { ...order };
+
+    // Initialize session if not present
+    if (!currentOrder.payment_session_expires_at) {
+      const createdAt = currentOrder.created_at || new Date().toISOString();
+      const expiresAt = new Date(new Date(createdAt).getTime() + 10 * 60 * 1000).toISOString();
+      currentOrder.payment_session_created_at = createdAt;
+      currentOrder.payment_session_expires_at = expiresAt;
+      modified = true;
+    }
+
+    // Check if session has expired
+    const expiresAtTime = new Date(currentOrder.payment_session_expires_at).getTime();
+    if (
+      Date.now() >= expiresAtTime &&
+      (currentOrder.order_status === 'PENDING_PAYMENT' || currentOrder.order_status === 'ORDER_PLACED')
+    ) {
+      currentOrder.order_status = 'PAYMENT_EXPIRED';
+      modified = true;
+    }
+
+    if (modified) {
+      const current = getLocalOrders();
+      const index = current.findIndex((o) => o.id === currentOrder.id || o.order_number === currentOrder.order_number);
+      if (index !== -1) {
+        current[index] = {
+          ...current[index],
+          ...currentOrder,
+          updated_at: new Date().toISOString(),
+        };
+        saveLocalOrders(current);
+      }
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase
+            .from('orders')
+            .update({
+              order_status: currentOrder.order_status,
+              payment_session_created_at: currentOrder.payment_session_created_at,
+              payment_session_expires_at: currentOrder.payment_session_expires_at,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', currentOrder.id);
+        } catch (err) {
+          console.warn('Supabase session sync error:', err);
+        }
+      }
+    }
+
+    return currentOrder;
+  },
+
+  /**
+   * Immediately expires the payment session and cancels order payment window
+   */
+  async expirePaymentSession(orderId: string): Promise<Order> {
+    return this.updateStatus(orderId, 'PAYMENT_EXPIRED');
   },
 
   async getAdminStats(): Promise<AdminStats> {

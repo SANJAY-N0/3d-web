@@ -7,6 +7,7 @@ export type OrderStatus =
   | 'OUT_FOR_DELIVERY'
   | 'DELIVERED'
   | 'CANCELLED'
+  | 'PAYMENT_EXPIRED'
   // Legacy backward-compatibility aliases
   | 'PENDING_PAYMENT'
   | 'PENDING_PAYMENT_VERIFICATION'
@@ -165,6 +166,8 @@ export interface Order {
   total_amount: number;
   customization?: CustomizationData;
   order_status: OrderStatus;
+  payment_session_created_at?: string;
+  payment_session_expires_at?: string;
   created_at: string;
   updated_at: string;
   // Joined relation fields

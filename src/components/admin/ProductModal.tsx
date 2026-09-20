@@ -205,7 +205,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 required
                 value={formData.name}
                 onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="e.g. Ergonomic Phone Stand"
+                placeholder="Product name"
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -217,7 +217,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 required
                 value={formData.slug}
                 onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-                placeholder="ergonomic-phone-stand"
+                placeholder="product-url-slug"
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-neutral-300 font-mono focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -231,7 +231,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Describe the 3D printed geometry, infill, functionality and usage..."
+              placeholder="Enter detailed product description..."
               className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500 leading-relaxed"
             />
           </div>
@@ -266,37 +266,26 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="font-mono text-neutral-300">Material (Filament/Resin)</label>
+              <label className="font-mono text-neutral-300">Material</label>
               <input
                 type="text"
                 value={formData.material}
                 onChange={(e) => setFormData({ ...formData, material: e.target.value })}
-                placeholder="e.g. PLA+, PETG-CF, SLA Resin"
+                placeholder="e.g. PLA, PETG, ABS, Resin"
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
               />
             </div>
           </div>
 
-          {/* Row 3: Dimensions, Print Time, 3D Mesh Type */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Row 3: Dimensions & 3D Interactive Viewer Model */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="font-mono text-neutral-300">Dimensions</label>
               <input
                 type="text"
                 value={formData.dimensions}
                 onChange={(e) => setFormData({ ...formData, dimensions: e.target.value })}
-                placeholder="e.g. 70 x 60 x 80 mm"
-                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="font-mono text-neutral-300">Approx Print Time</label>
-              <input
-                type="text"
-                value={formData.print_time}
-                onChange={(e) => setFormData({ ...formData, print_time: e.target.value })}
-                placeholder="e.g. 2h 45m"
+                placeholder="e.g. 100 x 100 x 50 mm"
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -331,15 +320,15 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               disabled={isSaving}
             />
 
-            {/* Optional Manual Direct URL Entry Toggle */}
+            {/* Custom Direct URL Entry Toggle */}
             <div className="flex items-center justify-between text-[11px] pt-1 px-1">
               <button
                 type="button"
                 onClick={() => setShowManualUrl(!showManualUrl)}
-                className="text-neutral-400 hover:text-cyan-400 flex items-center gap-1 font-mono transition-colors"
+                className="text-neutral-400 hover:text-cyan-400 flex items-center gap-1 font-mono transition-colors cursor-pointer"
               >
                 <LinkIcon className="w-3 h-3" />
-                {showManualUrl ? 'Hide Manual URL Input' : 'Direct Cloudinary / Remote Image URL (Advanced)'}
+                {showManualUrl ? 'Hide Custom Image URL' : 'Provide Custom Image URL'}
               </button>
             </div>
 
@@ -352,7 +341,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                   onChange={(e) => {
                     handleMainImageChange(e.target.value);
                   }}
-                  placeholder="https://res.cloudinary.com/jushiok7/image/upload/..."
+                  placeholder="https://..."
                   className="w-full px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-white font-mono focus:outline-none focus:border-cyan-500"
                 />
               </div>
@@ -373,7 +362,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                     handleAddColor();
                   }
                 }}
-                placeholder="Add filament color (e.g. Matte Black, Silk Gold)..."
+                placeholder="Add color (e.g. Matte Black, Red, White)..."
                 className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
               />
               <button

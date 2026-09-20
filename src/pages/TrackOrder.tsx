@@ -30,7 +30,7 @@ import { useToast } from '../components/common/Toast';
 
 interface TrackingStage {
   id: number;
-  key: OrderStatus;
+  key: OrderStatus | string;
   matchingStatuses: string[];
   label: string;
   subtitle: string;
@@ -41,51 +41,33 @@ interface TrackingStage {
 const TRACKING_STAGES: TrackingStage[] = [
   {
     id: 1,
-    key: 'ORDER_PLACED',
-    matchingStatuses: ['ORDER_PLACED', 'PENDING_PAYMENT'],
-    label: 'Order Placed',
-    subtitle: 'Received & Queued',
-    description: 'Order details and 3D print parameters registered.',
-    icon: Package,
+    key: 'ORDER_CONFIRMED',
+    matchingStatuses: ['ORDER_PLACED', 'PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION', 'PAYMENT_CONFIRMED', 'PAYMENT_VERIFIED'],
+    label: 'Order Confirmed',
+    subtitle: 'Received & Verified',
+    description: 'Order details and payment verified. Scheduled for 3D printing.',
+    icon: CheckCircle2,
   },
   {
     id: 2,
-    key: 'PAYMENT_CONFIRMED',
-    matchingStatuses: ['PAYMENT_CONFIRMED', 'PAYMENT_VERIFIED', 'PENDING_PAYMENT_VERIFICATION'],
-    label: 'Payment Confirmed',
-    subtitle: 'UPI Verified',
-    description: 'UPI transaction confirmed and assigned to print queue.',
-    icon: CreditCard,
-  },
-  {
-    id: 3,
-    key: 'ORDER_PROCESSING',
+    key: 'PREPARING',
     matchingStatuses: ['ORDER_PROCESSING', 'PRINTING'],
-    label: 'Order Processing',
-    subtitle: '3D Printing Active',
+    label: 'Preparing',
+    subtitle: 'Slicing & 3D Printing',
     description: 'Precision slicing completed. 3D printer actively laying down layers.',
     icon: Layers,
   },
   {
-    id: 4,
-    key: 'PRODUCT_READY',
-    matchingStatuses: ['PRODUCT_READY', 'READY_FOR_PICKUP'],
-    label: 'Product Ready',
-    subtitle: 'Post-Processed & Boxed',
-    description: 'Print finished, support structures removed, and quality inspected.',
+    id: 3,
+    key: 'READY',
+    matchingStatuses: ['PRODUCT_READY', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY'],
+    label: 'Ready',
+    subtitle: 'Ready for Handover',
+    description: 'Print finished, inspected, and ready for campus pickup or handover.',
     icon: Sparkles,
   },
   {
-    id: 5,
-    key: 'OUT_FOR_DELIVERY',
-    matchingStatuses: ['OUT_FOR_DELIVERY'],
-    label: 'Out for Delivery',
-    subtitle: 'In Transit',
-    description: 'Dispatched for direct campus classroom handover or courier.',
-    icon: Truck,
-  },
-  {
-    id: 6,
+    id: 4,
     key: 'DELIVERED',
     matchingStatuses: ['DELIVERED', 'COMPLETED'],
     label: 'Delivered',
@@ -266,26 +248,26 @@ export const TrackOrder: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-mono uppercase tracking-wider text-slate-600 dark:text-neutral-300 font-bold flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-                    <span>6-Stage Production Timeline</span>
+                    <span>Order Status Progression</span>
                   </span>
                   <span className="text-xs font-mono text-cyan-700 dark:text-cyan-400 font-bold">
-                    Stage {currentStageNum} of 6 ({progressPercentage}% Complete)
+                    Stage {currentStageNum} of 4 ({progressPercentage}% Complete)
                   </span>
                 </div>
 
                 {/* Desktop/Tablet Horizontal Stepper with Continuous Progress Bar */}
                 <div className="relative hidden md:block pt-4 pb-2">
-                  {/* Background Track Line */}
-                  <div className="absolute top-9 left-6 right-6 h-1.5 bg-slate-200 dark:bg-neutral-800 rounded-full z-0" />
+                  {/* Background Track Line: spans between center of column 1 and column 4 */}
+                  <div className="absolute top-9 left-[12.5%] right-[12.5%] h-1.5 bg-slate-200 dark:bg-neutral-800 rounded-full z-0 overflow-hidden">
+                    {/* Active Progress Gradient Bar */}
+                    <div
+                      className="h-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-emerald-500 rounded-full transition-all duration-700 ease-out"
+                      style={{ width: `${progressPercentage}%` }}
+                    />
+                  </div>
 
-                  {/* Active Progress Gradient Bar */}
-                  <div
-                    className="absolute top-9 left-6 h-1.5 bg-gradient-to-r from-cyan-500 via-indigo-500 to-emerald-500 rounded-full z-0 transition-all duration-700 ease-out"
-                    style={{ width: `calc(${progressPercentage}% * 0.88)` }}
-                  />
-
-                  {/* 6 Step Nodes */}
-                  <div className="grid grid-cols-6 relative z-10">
+                  {/* 4 Step Nodes */}
+                  <div className="grid grid-cols-4 relative z-10">
                     {TRACKING_STAGES.map((stage, idx) => {
                       const isPast = currentStageNum > stage.id;
                       const isCurrent = currentStageNum === stage.id;

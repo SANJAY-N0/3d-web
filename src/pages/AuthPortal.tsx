@@ -24,8 +24,6 @@ export const AuthPortal: React.FC = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
 
-  const initialTab = searchParams.get('tab') === 'admin' ? 'admin' : 'customer';
-  const [roleTab, setRoleTab] = useState<'customer' | 'admin'>(initialTab);
   const [customerMode, setCustomerMode] = useState<'signin' | 'signup'>('signin');
 
   // Customer Login Form State
@@ -50,11 +48,6 @@ export const AuthPortal: React.FC = () => {
     city: 'Coimbatore',
     pincode: '641407',
   });
-
-
-  // Admin Login Form State
-  const [adminEmail, setAdminEmail] = useState('admin@printlab.io');
-  const [adminPassword, setAdminPassword] = useState('admin123');
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -84,15 +77,11 @@ export const AuthPortal: React.FC = () => {
   };
 
   useEffect(() => {
-    if (tabParam === 'admin') setRoleTab('admin');
-    else if (tabParam === 'customer') setRoleTab('customer');
-  }, [tabParam]);
-
-  const switchRoleTab = (tab: 'customer' | 'admin') => {
-    setRoleTab(tab);
-    setErrorMessage('');
-    setSearchParams(tab === 'admin' ? { tab: 'admin' } : { tab: 'customer' });
-  };
+    // If admin tab requested, redirect to dedicated /admin/login route
+    if (tabParam === 'admin') {
+      navigate('/admin/login', { replace: true });
+    }
+  }, [tabParam, navigate]);
 
   // Handle Customer Sign In
   const handleCustomerLogin = async (e: React.FormEvent) => {
@@ -101,8 +90,26 @@ export const AuthPortal: React.FC = () => {
       setErrorMessage('Please enter your email or 10-digit mobile phone number.');
       return;
     }
+
     setLoading(true);
     setErrorMessage('');
+
+    // Check if account exists in authentication system
+    const exists = authService.checkCustomerExists(customerIdentifier);
+    if (!exists) {
+      setLoading(false);
+      // New user flow: show registration form only when user does not have an account
+      setCustomerMode('signup');
+      setSignupForm((prev) => ({
+        ...prev,
+        email: customerIdentifier.includes('@') ? customerIdentifier.trim() : prev.email,
+        phone: !customerIdentifier.includes('@') ? customerIdentifier.replace(/\D/g, '') : prev.phone,
+      }));
+      setErrorMessage('No existing account found for this email/phone. Please complete registration below to continue.');
+      showToast('No account found. Please complete registration.', 'info');
+      return;
+    }
+
     try {
       const user = await authService.loginCustomer(customerIdentifier, customerPassword);
       showToast(`Welcome back, ${user.name}!`, 'success');
@@ -132,6 +139,18 @@ export const AuthPortal: React.FC = () => {
       setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
+
+    // Check if user already has an account to avoid duplicate account creation
+    const emailExists = authService.checkCustomerExists(signupForm.email);
+    const phoneExists = authService.checkCustomerExists(signupForm.phone);
+    if (emailExists || phoneExists) {
+      setCustomerIdentifier(signupForm.email.trim() || signupForm.phone.trim());
+      setCustomerMode('signin');
+      setErrorMessage('An account with this email or phone already exists! Please enter your password to sign in.');
+      showToast('Account already exists. Please sign in.', 'info');
+      return;
+    }
+
     if (signupForm.college_type === 'Other' && (!signupForm.college || signupForm.college.trim().length < 2)) {
       setErrorMessage('Please enter your College / Institution name.');
       return;
@@ -151,28 +170,7 @@ export const AuthPortal: React.FC = () => {
     }
   };
 
-  // Handle Admin Sign In
-  const handleAdminLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminEmail.trim() || !adminPassword.trim()) {
-      setErrorMessage('Please provide both admin email and password.');
-      return;
-    }
-    setLoading(true);
-    setErrorMessage('');
-    try {
-      const admin = await authService.loginAdmin(adminEmail, adminPassword);
-      showToast(`Admin authenticated. Welcome, ${admin.name || 'Admin'}!`, 'success');
-      navigate(redirectUrl || '/admin/dashboard');
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Invalid admin credentials.');
-      showToast(err.message || 'Admin login failed', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 1-Click Demo Logins
+  // 1-Click Demo Customer Login
   const handleDemoCustomerLogin = async () => {
     setLoading(true);
     setErrorMessage('');
@@ -180,21 +178,7 @@ export const AuthPortal: React.FC = () => {
       const demo = authService.getDemoCustomer();
       await authService.loginCustomer(demo.email, 'customer123');
       showToast(`Logged in as demo customer (${demo.name})`, 'success');
-      navigate(redirectUrl || '/customer/orders');
-    } catch (err: any) {
-      setErrorMessage(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDemoAdminLogin = async () => {
-    setLoading(true);
-    setErrorMessage('');
-    try {
-      await authService.loginAdmin('admin@printlab.io', 'admin123');
-      showToast('Logged in as Store Admin', 'success');
-      navigate('/admin/dashboard');
+      navigate(getResolvedCustomerRedirect());
     } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
@@ -213,40 +197,11 @@ export const AuthPortal: React.FC = () => {
             </div>
           </div>
           <h1 className="font-display font-bold text-2xl sm:text-3xl text-slate-900 dark:text-white">
-            PRINTLAB <span className="text-cyan-600 dark:text-cyan-400">3D</span> Access Portal
+            PRINTLAB <span className="text-cyan-600 dark:text-cyan-400">3D</span> Customer Hub
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-neutral-400 max-w-md mx-auto">
-            Sign in to track orders, manage prints, or access administrative tools.
+            Sign in to track orders, manage prints, and complete your checkout.
           </p>
-        </div>
-
-        {/* Dual Role Selector Tab */}
-        <div className="grid grid-cols-2 p-1.5 bg-slate-100 dark:bg-neutral-900/90 rounded-2xl border border-slate-200 dark:border-neutral-800 shadow-sm">
-          <button
-            type="button"
-            onClick={() => switchRoleTab('customer')}
-            className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              roleTab === 'customer'
-                ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-600/20'
-                : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-neutral-800/50'
-            }`}
-          >
-            <User className="w-4 h-4" />
-            <span>Customer Login</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => switchRoleTab('admin')}
-            className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              roleTab === 'admin'
-                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-600/20'
-                : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-neutral-800/50'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Admin Portal</span>
-          </button>
         </div>
 
         {/* Error Alert */}
@@ -257,21 +212,36 @@ export const AuthPortal: React.FC = () => {
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* CUSTOMER TAB CONTENT */}
-        {/* ========================================================================= */}
-        {roleTab === 'customer' && (
-          <div className="bg-white dark:bg-neutral-900/60 backdrop-blur-xl border border-slate-200 dark:border-neutral-800 rounded-2xl p-6 sm:p-8 space-y-6 shadow-sm dark:shadow-2xl">
+        <div className="bg-white dark:bg-neutral-900/60 backdrop-blur-xl border border-slate-200 dark:border-neutral-800 rounded-2xl p-6 sm:p-8 space-y-6 shadow-sm dark:shadow-2xl">
+          {/* Context Banner when coming from Buy Product / Order */}
+            {redirectUrl.includes('/order') && (
+              <div className="p-3.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-500/30 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-cyan-600 text-white flex items-center justify-center shrink-0">
+                  <Box className="w-4 h-4" />
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-cyan-800 dark:text-cyan-300 block">
+                    Complete Your 3D Print Order
+                  </span>
+                  <p className="text-[11px] text-slate-600 dark:text-neutral-400">
+                    {customerMode === 'signin'
+                      ? 'Existing Customer: Sign in with your password to proceed to Checkout.'
+                      : 'New Customer: Complete registration once to proceed to Checkout.'}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Customer Subtab: Sign In vs Sign Up */}
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-neutral-800 pb-4">
               <div>
                 <h2 className="font-display font-semibold text-lg text-slate-900 dark:text-white">
-                  {customerMode === 'signin' ? 'Customer Sign In' : 'Create Customer Account'}
+                  {customerMode === 'signin' ? 'Customer Sign In (Existing User)' : 'Create Account (New User)'}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-neutral-400">
                   {customerMode === 'signin'
-                    ? 'Track your 3D orders & manage delivery details'
-                    : 'Get fast checkout and live 3D print tracking'}
+                    ? 'Existing user login: verify credentials to continue to checkout'
+                    : 'New user registration: register once to proceed to checkout'}
                 </p>
               </div>
 
@@ -283,7 +253,9 @@ export const AuthPortal: React.FC = () => {
                     setErrorMessage('');
                   }}
                   className={`px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                    customerMode === 'signin' ? 'bg-white dark:bg-neutral-800 text-cyan-700 dark:text-cyan-300 font-semibold shadow-sm' : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
+                    customerMode === 'signin'
+                      ? 'bg-white dark:bg-neutral-800 text-cyan-700 dark:text-cyan-300 font-semibold shadow-sm'
+                      : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   Sign In
@@ -295,7 +267,9 @@ export const AuthPortal: React.FC = () => {
                     setErrorMessage('');
                   }}
                   className={`px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                    customerMode === 'signup' ? 'bg-white dark:bg-neutral-800 text-cyan-700 dark:text-cyan-300 font-semibold shadow-sm' : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
+                    customerMode === 'signup'
+                      ? 'bg-white dark:bg-neutral-800 text-cyan-700 dark:text-cyan-300 font-semibold shadow-sm'
+                      : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   Register
@@ -362,8 +336,21 @@ export const AuthPortal: React.FC = () => {
                   className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-lg shadow-cyan-600/20 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <LogIn className="w-4 h-4" />
-                  <span>{loading ? 'Signing In...' : 'Sign In to Customer Hub'}</span>
+                  <span>{loading ? 'Signing In...' : 'Sign In & Continue'}</span>
                 </button>
+
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomerMode('signup');
+                      setErrorMessage('');
+                    }}
+                    className="text-xs text-cyan-700 dark:text-cyan-400 hover:underline font-medium cursor-pointer"
+                  >
+                    New customer? Register here to complete your order →
+                  </button>
+                </div>
               </form>
             ) : (
               /* Customer Sign Up Form */
@@ -545,6 +532,19 @@ export const AuthPortal: React.FC = () => {
                   <UserPlus className="w-4 h-4" />
                   <span>{loading ? 'Creating Profile...' : 'Complete Customer Registration'}</span>
                 </button>
+
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomerMode('signin');
+                      setErrorMessage('');
+                    }}
+                    className="text-xs text-cyan-700 dark:text-cyan-400 hover:underline font-medium cursor-pointer"
+                  >
+                    Already have an account? Sign In with password (Existing User) →
+                  </button>
+                </div>
               </form>
             )}
 
@@ -562,87 +562,7 @@ export const AuthPortal: React.FC = () => {
               </Link>
             </div>
           </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* ADMIN TAB CONTENT */}
-        {/* ========================================================================= */}
-        {roleTab === 'admin' && (
-          <div className="bg-white dark:bg-neutral-900/60 backdrop-blur-xl border border-indigo-200 dark:border-indigo-900/40 rounded-2xl p-6 sm:p-8 space-y-6 shadow-sm dark:shadow-2xl">
-            <div className="border-b border-slate-200 dark:border-neutral-800 pb-4">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 text-[10px] font-mono mb-2 font-semibold">
-                <ShieldCheck className="w-3 h-3" /> RESTRICTED ACCESS
-              </div>
-              <h2 className="font-display font-semibold text-lg text-slate-900 dark:text-white">
-                Admin & Stall Operator Sign In
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-neutral-400">
-                Verify UPI payment proofs, manage live 3D print queues, and update products.
-              </p>
-            </div>
-
-            {/* Quick 1-Click Demo Admin Banner */}
-            <div className="bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-500/30 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <span className="text-xs font-mono font-semibold text-indigo-800 dark:text-indigo-300 flex items-center gap-1.5">
-                  <KeyRound className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> Demo Admin Access
-                </span>
-                <p className="text-[11px] text-slate-600 dark:text-neutral-400 font-mono">
-                  admin@printlab.io / admin123
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleDemoAdminLogin}
-                disabled={loading}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shrink-0 transition-colors shadow-sm cursor-pointer"
-              >
-                1-Click Admin Login
-              </button>
-            </div>
-
-            {/* Admin Login Form */}
-            <form onSubmit={handleAdminLogin} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1.5 font-semibold">
-                  <Mail className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> Admin Email
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={adminEmail}
-                  onChange={(e) => setAdminEmail(e.target.value)}
-                  placeholder="admin@printlab.io"
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-neutral-500 focus:outline-none focus:border-indigo-500 transition-colors"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1.5 font-semibold">
-                  <Lock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> Admin Password
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  placeholder="admin123"
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-neutral-500 focus:outline-none focus:border-indigo-500 transition-colors"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/20 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>{loading ? 'Authenticating Admin...' : 'Open Admin Operations Console'}</span>
-              </button>
-            </form>
-          </div>
-        )}
+        </div>
       </div>
-    </div>
   );
 };

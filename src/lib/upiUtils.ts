@@ -1,6 +1,24 @@
 export const DEFAULT_UPI_ID = import.meta.env.VITE_UPI_ID || 'printlab3d@okhdfcbank';
 export const DEFAULT_BUSINESS_NAME = import.meta.env.VITE_BUSINESS_NAME || 'PRINTLAB 3D';
 
+/**
+ * Returns active merchant UPI configuration dynamically from Admin Settings or defaults
+ */
+export function getMerchantUPIConfig(): { upiId: string; businessName: string } {
+  if (typeof window !== 'undefined') {
+    const storedUpi = localStorage.getItem('printlab_merchant_upi_id');
+    const storedName = localStorage.getItem('printlab_merchant_name');
+    return {
+      upiId: storedUpi && storedUpi.trim() ? storedUpi.trim() : DEFAULT_UPI_ID,
+      businessName: storedName && storedName.trim() ? storedName.trim() : DEFAULT_BUSINESS_NAME,
+    };
+  }
+  return {
+    upiId: DEFAULT_UPI_ID,
+    businessName: DEFAULT_BUSINESS_NAME,
+  };
+}
+
 export const UPI_CONFIG = {
   upiId: DEFAULT_UPI_ID,
   businessName: DEFAULT_BUSINESS_NAME,
@@ -16,8 +34,9 @@ export function buildUPIUri(params: {
   orderNumber: string;
   note?: string;
 }): string {
-  const upiId = params.upiId || DEFAULT_UPI_ID;
-  const businessName = params.businessName || DEFAULT_BUSINESS_NAME;
+  const config = getMerchantUPIConfig();
+  const upiId = params.upiId || config.upiId;
+  const businessName = params.businessName || config.businessName;
   const note = params.note || `Payment for 3D Print Order ${params.orderNumber}`;
   const encodedName = encodeURIComponent(businessName);
   const encodedNote = encodeURIComponent(note);

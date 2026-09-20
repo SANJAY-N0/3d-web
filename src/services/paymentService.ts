@@ -174,6 +174,17 @@ export const paymentService = {
   }): Promise<Payment> {
     const { orderId, amount, transactionId, screenshotUrl, upiId, analysis } = params;
 
+    // Security Enforcement: Check session expiration
+    const allOrdersCheck = await orderService.getAll();
+    const targetOrderCheck = allOrdersCheck.find(o => o.id === orderId || o.order_number === orderId);
+    if (targetOrderCheck?.payment_session_expires_at) {
+      const expiresAt = new Date(targetOrderCheck.payment_session_expires_at).getTime();
+      if (Date.now() >= expiresAt) {
+        await orderService.updateStatus(targetOrderCheck.id, 'PAYMENT_EXPIRED');
+        throw new Error('The 10-minute payment session has expired. This order has been cancelled.');
+      }
+    }
+
     const paymentData: Payment = {
       id: 'pay-' + Date.now(),
       order_id: orderId,

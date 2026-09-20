@@ -113,17 +113,6 @@ export const Navbar: React.FC = () => {
               )}
             </button>
 
-            {/* Admin Badge link if authenticated */}
-            {isAdmin && (
-              <Link
-                to="/admin/dashboard"
-                className="flex items-center gap-1.5 text-xs font-mono px-3 py-2 bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900 transition-colors"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Admin Hub</span>
-              </Link>
-            )}
-
             {/* Customer Avatar & Menu */}
             {currentCustomer ? (
               <div className="relative">
@@ -186,28 +175,15 @@ export const Navbar: React.FC = () => {
                 {userDropdownOpen && (
                   <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 rounded-2xl p-2 shadow-2xl z-50 space-y-1">
                     <Link
-                      to="/login?tab=customer"
+                      to="/login"
                       className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs text-slate-800 dark:text-neutral-200 hover:bg-cyan-50 dark:hover:bg-neutral-800/80 transition-colors"
                     >
                       <div className="w-7 h-7 rounded-lg bg-cyan-100 dark:bg-cyan-950/80 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
                         <User className="w-3.5 h-3.5" />
                       </div>
                       <div>
-                        <div className="font-semibold text-slate-900 dark:text-white">Customer Login</div>
+                        <div className="font-semibold text-slate-900 dark:text-white">Customer Sign In</div>
                         <div className="text-[10px] text-slate-500 dark:text-neutral-400">Track your prints & orders</div>
-                      </div>
-                    </Link>
-
-                    <Link
-                      to="/login?tab=admin"
-                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs text-slate-800 dark:text-neutral-200 hover:bg-indigo-50 dark:hover:bg-neutral-800/80 transition-colors border-t border-slate-100 dark:border-neutral-800"
-                    >
-                      <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-950/80 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-slate-900 dark:text-white">Admin Portal</div>
-                        <div className="text-[10px] text-slate-500 dark:text-neutral-400">UPI verify & print queue</div>
                       </div>
                     </Link>
                   </div>
@@ -281,25 +257,14 @@ export const Navbar: React.FC = () => {
                 <span className="text-cyan-500">→</span>
               </Link>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <Link
-                  to="/login?tab=customer"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 text-xs font-semibold text-slate-800 dark:text-neutral-200"
-                >
-                  <User className="w-3.5 h-3.5 text-cyan-500" />
-                  Customer Login
-                </Link>
-
-                <Link
-                  to="/login?tab=admin"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 text-xs font-semibold text-slate-800 dark:text-neutral-200"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
-                  Admin Login
-                </Link>
-              </div>
+              <Link
+                to="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 text-xs font-semibold text-slate-800 dark:text-neutral-200"
+              >
+                <User className="w-3.5 h-3.5 text-cyan-500" />
+                Customer Sign In / Register
+              </Link>
             )}
 
             <Link

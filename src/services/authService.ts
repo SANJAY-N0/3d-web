@@ -160,14 +160,43 @@ export const authService = {
     return Boolean(localStorage.getItem(CUSTOMER_SESSION_KEY));
   },
 
+  checkCustomerExists(identifier: string): boolean {
+    if (!identifier || !identifier.trim()) return false;
+    const idClean = identifier.trim().toLowerCase();
+    const cleanPhone = identifier.replace(/\D/g, '');
+    const customers = getRegisteredCustomers();
+    return customers.some((c) => {
+      const emailMatch = c.email && c.email.toLowerCase() === idClean;
+      const phoneMatch = cleanPhone.length >= 10 && c.phone && c.phone.replace(/\D/g, '') === cleanPhone;
+      return emailMatch || phoneMatch;
+    });
+  },
+
+  findCustomerByIdentifier(identifier: string): (CustomerUser & { password?: string }) | null {
+    if (!identifier || !identifier.trim()) return null;
+    const idClean = identifier.trim().toLowerCase();
+    const cleanPhone = identifier.replace(/\D/g, '');
+    const customers = getRegisteredCustomers();
+    return (
+      customers.find((c) => {
+        const emailMatch = c.email && c.email.toLowerCase() === idClean;
+        const phoneMatch = cleanPhone.length >= 10 && c.phone && c.phone.replace(/\D/g, '') === cleanPhone;
+        return emailMatch || phoneMatch;
+      }) || null
+    );
+  },
+
   async loginCustomer(identifier: string, password?: string): Promise<CustomerUser> {
     const idClean = identifier.trim().toLowerCase();
+    const cleanPhone = identifier.replace(/\D/g, '');
     const customers = getRegisteredCustomers();
 
     // Find by email or phone
-    const found = customers.find(
-      (c) => c.email.toLowerCase() === idClean || c.phone.replace(/\D/g, '') === idClean.replace(/\D/g, '')
-    );
+    const found = customers.find((c) => {
+      const emailMatch = c.email && c.email.toLowerCase() === idClean;
+      const phoneMatch = cleanPhone.length >= 10 && c.phone && c.phone.replace(/\D/g, '') === cleanPhone;
+      return emailMatch || phoneMatch;
+    });
 
     if (found) {
       // If password provided and customer has password, check match (allow demo pass)
@@ -199,36 +228,7 @@ export const authService = {
       return sessionUser;
     }
 
-    // If identifier looks like an email or phone, auto-create a student profile for smooth experience
-    if (idClean.includes('@') || idClean.length >= 10) {
-      const newCust: CustomerUser = {
-        id: 'cust-' + Date.now(),
-        name: idClean.includes('@') ? idClean.split('@')[0].toUpperCase() : 'Student',
-        email: idClean.includes('@') ? idClean : `${idClean}@kpr.student`,
-        phone: idClean.includes('@') ? '9876543210' : idClean,
-        college_type: 'KPR College',
-        college: 'KPR College',
-        roll_number: '22CS101',
-        delivery_method: 'college_delivery',
-        department: 'Computer Science & Engineering',
-        year: '3rd Year',
-        section: 'Section A',
-        building_block: 'Academic Block III',
-        pickup_location: 'Classroom Delivery',
-        address: 'KPR College Campus',
-        city: 'Coimbatore',
-        state: 'Tamil Nadu',
-        pincode: '641407',
-        role: 'customer',
-        created_at: new Date().toISOString(),
-      };
-      const updatedList = [...customers, { ...newCust, password: password || 'customer123' }];
-      saveRegisteredCustomers(updatedList);
-      localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(newCust));
-      return newCust;
-    }
-
-    throw new Error('Account not found. Please enter a valid email or phone number to sign in or register.');
+    throw new Error('Account not found with this email or phone. Please register to create an account.');
   },
 
   async signupCustomer(data: {
@@ -251,8 +251,12 @@ export const authService = {
     pincode?: string;
   }): Promise<CustomerUser> {
     const customers = getRegisteredCustomers();
+    const cleanPhone = data.phone ? data.phone.replace(/\D/g, '') : '';
+    const cleanEmail = data.email ? data.email.trim().toLowerCase() : '';
     const existing = customers.find(
-      (c) => c.email.toLowerCase() === data.email.trim().toLowerCase() || c.phone === data.phone.trim()
+      (c) =>
+        (cleanEmail && c.email.toLowerCase() === cleanEmail) ||
+        (cleanPhone.length >= 10 && c.phone.replace(/\D/g, '') === cleanPhone)
     );
 
     const collegeType = data.college_type || (data.college?.toLowerCase().includes('kpr') ? 'KPR College' : 'Other');

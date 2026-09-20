@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Sparkles, Shield, QrCode, Cpu, Layers } from 'lucide-react';
+import { getSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
 
 export const Footer: React.FC = () => {
   return (
@@ -49,24 +50,23 @@ export const Footer: React.FC = () => {
             </ul>
           </div>
 
-          {/* Admin & Operations */}
+          {/* Customer Care & Support */}
           <div className="space-y-3">
-            <h4 className="font-display font-semibold text-white text-sm tracking-wider uppercase">Business & Admin</h4>
+            <h4 className="font-display font-semibold text-white text-sm tracking-wider uppercase">Support & Contact</h4>
             <ul className="space-y-2 text-xs">
               <li>
-                <Link to="/admin/login" className="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-                  <Shield className="w-3 h-3 text-neutral-400" />
-                  Admin Login
-                </Link>
+                <span className="text-neutral-400 block">📞 Call: <a href={`tel:${getSupportConfig().phone.replace(/\s+/g, '')}`} className="text-white hover:text-cyan-400 font-mono transition-colors">{getSupportConfig().phone}</a></span>
               </li>
               <li>
-                <Link to="/admin/dashboard" className="hover:text-cyan-400 transition-colors">Live Dashboard</Link>
+                <span className="text-neutral-400 block">💬 WhatsApp: <a href={getWhatsAppLink(getSupportConfig().whatsapp)} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 font-mono transition-colors">{getSupportConfig().whatsapp}</a></span>
               </li>
-              <li>
-                <span className="text-neutral-400">Manual UPI Payments Only</span>
-              </li>
-              <li>
-                <span className="text-neutral-400">Campus / Event Stall Pickup</span>
+              {getSupportConfig().altPhone && (
+                <li>
+                  <span className="text-neutral-400 block">📞 Alternative: <a href={`tel:${getSupportConfig().altPhone!.replace(/\s+/g, '')}`} className="text-white hover:text-cyan-400 font-mono transition-colors">{getSupportConfig().altPhone}</a></span>
+                </li>
+              )}
+              <li className="pt-1">
+                <Link to="/track" className="text-cyan-400 hover:text-cyan-300 transition-colors">Track Order Status →</Link>
               </li>
             </ul>
           </div>
