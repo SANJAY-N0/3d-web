@@ -101,15 +101,16 @@ export const Navbar: React.FC = () => {
           <div className="hidden md:flex items-center gap-2.5">
             {/* Theme Toggle Button (Light/White vs Dark mode) */}
             <button
+              type="button"
               onClick={toggleTheme}
-              className="p-2.5 rounded-xl border border-slate-200 dark:border-neutral-800 bg-slate-100 dark:bg-neutral-900 text-slate-700 dark:text-neutral-300 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors cursor-pointer"
-              title={`Switch to ${theme === 'dark' ? 'Light / White' : 'Dark'} Theme`}
-              aria-label="Toggle color theme"
+              className="p-2.5 rounded-xl border border-slate-300 dark:border-neutral-800 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center justify-center shadow-sm active:scale-95"
+              title={theme === 'light' ? 'Switch to Dark Mode (🌙)' : 'Switch to Light Mode (☀️)'}
+              aria-label={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
             >
-              {theme === 'dark' ? (
-                <Sun className="w-4 h-4 text-amber-400 animate-in spin-in-180" />
+              {theme === 'light' ? (
+                <Sun className="w-4 h-4 text-amber-500 animate-in spin-in-180" />
               ) : (
-                <Moon className="w-4 h-4 text-indigo-600 animate-in spin-in-180" />
+                <Moon className="w-4 h-4 text-cyan-400 animate-in spin-in-180" />
               )}
             </button>
 
@@ -204,11 +205,17 @@ export const Navbar: React.FC = () => {
           {/* Mobile menu and theme toggle */}
           <div className="flex md:hidden items-center gap-2">
             <button
+              type="button"
               onClick={toggleTheme}
-              className="p-2 rounded-xl bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 text-slate-700 dark:text-neutral-300"
-              aria-label="Toggle theme"
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-900 dark:hover:bg-neutral-800 border border-slate-300 dark:border-neutral-800 text-slate-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center justify-center shadow-sm"
+              title={theme === 'light' ? 'Switch to Dark Mode (🌙)' : 'Switch to Light Mode (☀️)'}
+              aria-label={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
             >
-              {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
+              {theme === 'light' ? (
+                <Sun className="w-4 h-4 text-amber-500 animate-in spin-in-180" />
+              ) : (
+                <Moon className="w-4 h-4 text-cyan-400 animate-in spin-in-180" />
+              )}
             </button>
 
             <button

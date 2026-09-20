@@ -28,18 +28,26 @@ export function getSystemTimeTheme(): Theme {
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<Theme>(() => {
-    // Determine automatically from current local time
+    // 1. Check if user previously selected a theme preference
+    const savedTheme = localStorage.getItem('printlab_theme') as Theme | null;
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      return savedTheme;
+    }
+    // 2. Otherwise determine automatically from current local time
     return getSystemTimeTheme();
   });
 
-  const [isAutoTimeBased, setIsAutoTimeBased] = useState<boolean>(true);
+  const [isAutoTimeBased, setIsAutoTimeBased] = useState<boolean>(() => {
+    return !localStorage.getItem('printlab_theme');
+  });
+
   const [currentTimeString, setCurrentTimeString] = useState<string>('');
   const [isDayTime, setIsDayTime] = useState<boolean>(() => {
     const h = new Date().getHours();
     return h >= 6 && h < 18;
   });
 
-  // Check and sync theme automatically based on local time
+  // Check and sync theme automatically based on local time if no manual preference set
   useEffect(() => {
     const updateTimeAndTheme = () => {
       const now = new Date();
@@ -68,19 +76,26 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (theme === 'dark') {
       root.classList.add('dark');
       root.classList.remove('light');
+      root.style.colorScheme = 'dark';
     } else {
       root.classList.remove('dark');
       root.classList.add('light');
+      root.style.colorScheme = 'light';
     }
   }, [theme]);
 
   const toggleTheme = () => {
-    setIsAutoTimeBased(false); // manual override if user clicks toggle
-    setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    setIsAutoTimeBased(false); // manual override
+    setThemeState((prev) => {
+      const next: Theme = prev === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('printlab_theme', next);
+      return next;
+    });
   };
 
   const setTheme = (newTheme: Theme) => {
     setIsAutoTimeBased(false);
+    localStorage.setItem('printlab_theme', newTheme);
     setThemeState(newTheme);
   };
 
