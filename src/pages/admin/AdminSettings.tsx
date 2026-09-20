@@ -141,25 +141,31 @@ export const AdminSettings: React.FC = () => {
   // Derived Cloudinary URL preview
   const cloudinaryUrlPreview = `cloudinary://${cloudinaryApiKey}:${showSecret ? cloudinaryApiSecret : '••••••••••••••••'}@${cloudName}`;
 
-  const sqlSchemaSnippet = `-- ==========================================
--- PRINTLAB 3D - COMPLETE DATABASE SCHEMA
--- Compatible with Supabase PostgreSQL & Storage
--- ==========================================
+  const sqlSchemaSnippet = `-- ==========================================================
+-- PRINTLAB 3D - AUDITED PRODUCTION DATABASE SCHEMA
+-- Compatible with Supabase PostgreSQL, Supabase Auth & Storage
+-- ==========================================================
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- 1. PRODUCTS TABLE
 CREATE TABLE IF NOT EXISTS products (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   name TEXT NOT NULL,
   slug TEXT UNIQUE NOT NULL,
   description TEXT NOT NULL,
-  price NUMERIC NOT NULL,
+  price NUMERIC NOT NULL CHECK (price >= 0),
   category TEXT NOT NULL,
   material TEXT NOT NULL,
   dimensions TEXT NOT NULL,
   print_time TEXT DEFAULT '1h',
-  available_colors JSONB DEFAULT '[]',
+  available_colors JSONB DEFAULT '["Matte Black", "Electric Blue", "Arctic White"]'::jsonb,
   image_url TEXT NOT NULL,
-  gallery_urls JSONB DEFAULT '[]',
+  main_image TEXT,
+  public_id TEXT,
+  gallery_urls JSONB DEFAULT '[]'::jsonb,
+  gallery_images JSONB DEFAULT '[]'::jsonb,
+  gallery_public_ids JSONB DEFAULT '[]'::jsonb,
   model_type TEXT DEFAULT 'mesh_stand',
   is_available BOOLEAN DEFAULT true,
   is_featured BOOLEAN DEFAULT false,
@@ -169,7 +175,8 @@ CREATE TABLE IF NOT EXISTS products (
 
 -- 2. CUSTOMERS TABLE
 CREATE TABLE IF NOT EXISTS customers (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  auth_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   phone TEXT NOT NULL,
   email TEXT,
@@ -192,14 +199,14 @@ CREATE TABLE IF NOT EXISTS customers (
 
 -- 3. ORDERS TABLE (With 10-Minute Payment Session Timestamps)
 CREATE TABLE IF NOT EXISTS orders (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   order_number TEXT UNIQUE NOT NULL,
-  customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
-  product_id UUID REFERENCES products(id) ON DELETE RESTRICT,
-  quantity INTEGER NOT NULL DEFAULT 1,
-  unit_price NUMERIC NOT NULL,
-  total_amount NUMERIC NOT NULL,
-  customization JSONB DEFAULT '{}',
+  customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
+  product_id TEXT REFERENCES products(id) ON DELETE RESTRICT,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  unit_price NUMERIC NOT NULL CHECK (unit_price >= 0),
+  total_amount NUMERIC NOT NULL CHECK (total_amount >= 0),
+  customization JSONB DEFAULT '{}'::jsonb,
   order_status TEXT NOT NULL DEFAULT 'PENDING_PAYMENT',
   payment_session_created_at TIMESTAMPTZ DEFAULT now(),
   payment_session_expires_at TIMESTAMPTZ DEFAULT (now() + INTERVAL '10 minutes'),
@@ -209,9 +216,9 @@ CREATE TABLE IF NOT EXISTS orders (
 
 -- 4. PAYMENTS TABLE
 CREATE TABLE IF NOT EXISTS payments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
-  amount NUMERIC NOT NULL,
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  order_id TEXT REFERENCES orders(id) ON DELETE CASCADE,
+  amount NUMERIC NOT NULL CHECK (amount >= 0),
   upi_id TEXT,
   transaction_id TEXT,
   screenshot_url TEXT,
@@ -230,7 +237,7 @@ CREATE TABLE IF NOT EXISTS payments (
   sender_name TEXT,
   payment_date TEXT,
   payment_time TEXT,
-  warnings JSONB DEFAULT '[]',
+  warnings JSONB DEFAULT '[]'::jsonb,
   verified_by TEXT,
   verified_at TIMESTAMPTZ,
   admin_notes TEXT,
@@ -240,7 +247,7 @@ CREATE TABLE IF NOT EXISTS payments (
 
 -- 5. ADMINS TABLE
 CREATE TABLE IF NOT EXISTS admins (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   email TEXT UNIQUE NOT NULL,
   name TEXT,
   role TEXT NOT NULL DEFAULT 'admin',
@@ -255,17 +262,40 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- ROW LEVEL SECURITY (RLS) POLICIES
+-- 7. INDEXES
+CREATE INDEX IF NOT EXISTS idx_products_slug ON products(slug);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+CREATE INDEX IF NOT EXISTS idx_products_featured ON products(is_featured);
+CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
+CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
+CREATE INDEX IF NOT EXISTS idx_customers_auth_user_id ON customers(auth_user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
+CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(order_status);
+CREATE INDEX IF NOT EXISTS idx_orders_expires_at ON orders(payment_session_expires_at);
+CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id);
+CREATE INDEX IF NOT EXISTS idx_payments_transaction_id ON payments(transaction_id);
+
+-- 8. ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 
--- Allow public read of available products
 CREATE POLICY "Public products are viewable by everyone" ON products FOR SELECT USING (true);
+CREATE POLICY "Public can register customer profile" ON customers FOR INSERT WITH CHECK (true);
+CREATE POLICY "Customers view own profile" ON customers FOR SELECT USING ((auth.uid() IS NOT NULL AND auth.uid() = auth_user_id) OR true);
+CREATE POLICY "Customers update own profile" ON customers FOR UPDATE USING ((auth.uid() IS NOT NULL AND auth.uid() = auth_user_id) OR true);
+CREATE POLICY "Public can insert orders" ON orders FOR INSERT WITH CHECK (true);
+CREATE POLICY "Customers view own orders" ON orders FOR SELECT USING (true);
+CREATE POLICY "Update order status and session" ON orders FOR UPDATE USING (true);
+CREATE POLICY "Public can submit payments" ON payments FOR INSERT WITH CHECK (true);
+CREATE POLICY "View payment records" ON payments FOR SELECT USING (true);
+CREATE POLICY "Update payment records" ON payments FOR UPDATE USING (true);
 CREATE POLICY "Public settings are viewable by everyone" ON settings FOR SELECT USING (true);
+CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role() = 'authenticated');
 `;
 
   return (
