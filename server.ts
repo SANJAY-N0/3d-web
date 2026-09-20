@@ -300,6 +300,335 @@ async function startServer() {
       });
     }
   });
+  /**
+   * Dedicated endpoint to create a new order directly in Supabase
+   * Verifies product, calculates price from DB, finds/upserts customer, generates order number,
+   * inserts order row, creates initial payment row, and returns the real DB record.
+   */
+  app.post("/api/orders/create", async (req, res) => {
+    try {
+      const { customer, customer_id, product_id, quantity = 1, customization = {} } = req.body;
+
+      console.log("==========================================");
+      console.log("TABLE: orders");
+      console.log("OPERATION: CREATE ORDER REQUEST");
+      console.log("REQUEST BODY:", JSON.stringify({ customer_id, product_id, quantity, customization, customer_name: customer?.name }));
+
+      if (!supabaseServer) {
+        console.error("Database service unavailable (supabaseServer is null)");
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      if (!product_id) {
+        return res.status(400).json({ success: false, error: "Product ID is required." });
+      }
+
+      // 1. Verify Product from database (Section 6)
+      const { data: prodRecord, error: prodErr } = await supabaseServer
+        .from("products")
+        .select("*")
+        .eq("id", product_id)
+        .maybeSingle();
+
+      if (prodErr || !prodRecord) {
+        console.error("Product lookup error in DB:", prodErr);
+        return res.status(404).json({ success: false, error: "Product not found in database." });
+      }
+
+      const unitPrice = Number(prodRecord.price);
+      const validatedQty = Math.max(1, Number(quantity) || 1);
+      const totalAmount = unitPrice * validatedQty;
+
+      // 2. Verify / Find / Upsert Customer (Section 5)
+      let resolvedCustomerId = customer_id;
+
+      if (customer) {
+        const cleanPhone = String(customer.phone || "").replace(/\D/g, "").slice(-10);
+        const cleanEmail = String(customer.email || "").trim().toLowerCase();
+
+        let existingCustomer: any = null;
+
+        // Try lookup by auth_user_id if present
+        if (customer.auth_user_id) {
+          const { data: byAuth } = await supabaseServer
+            .from("customers")
+            .select("id")
+            .eq("auth_user_id", customer.auth_user_id)
+            .maybeSingle();
+          if (byAuth) existingCustomer = byAuth;
+        }
+
+        // Try lookup by phone or email
+        if (!existingCustomer && (cleanPhone || cleanEmail)) {
+          let custQuery = supabaseServer.from("customers").select("id, phone, email");
+          if (cleanPhone && cleanEmail) {
+            custQuery = custQuery.or(`phone.eq.${cleanPhone},email.eq.${cleanEmail}`);
+          } else if (cleanPhone) {
+            custQuery = custQuery.eq("phone", cleanPhone);
+          } else if (cleanEmail) {
+            custQuery = custQuery.eq("email", cleanEmail);
+          }
+          const { data: byPhoneOrEmail } = await custQuery.limit(1).maybeSingle();
+          if (byPhoneOrEmail) existingCustomer = byPhoneOrEmail;
+        }
+
+        const customerRow: Record<string, any> = {
+          name: customer.name || "Customer",
+          phone: cleanPhone || customer.phone || "0000000000",
+          email: cleanEmail || customer.email || null,
+          college: customer.college || (customer.college_type === "KPR College" ? "KPR College" : "Other"),
+          college_type: customer.college_type || "KPR College",
+          roll_number: customer.roll_number || "",
+          delivery_method: customer.delivery_method || "college_delivery",
+          department: customer.department || "",
+          year: customer.year || "",
+          section: customer.section || "",
+          building_block: customer.building_block || "",
+          pickup_location: customer.pickup_location || "",
+          address: customer.address || "KPR College Campus",
+          city: customer.city || "Coimbatore",
+          state: customer.state || "Tamil Nadu",
+          pincode: customer.pincode || "641407",
+          updated_at: new Date().toISOString(),
+        };
+
+        if (customer.auth_user_id) {
+          customerRow.auth_user_id = customer.auth_user_id;
+        }
+
+        if (existingCustomer) {
+          console.log("Found existing customer:", existingCustomer.id, "Updating with latest details...");
+          const { data: updatedCust, error: updateCustErr } = await supabaseServer
+            .from("customers")
+            .update(customerRow)
+            .eq("id", existingCustomer.id)
+            .select()
+            .single();
+
+          if (!updateCustErr && updatedCust) {
+            resolvedCustomerId = updatedCust.id;
+          } else {
+            resolvedCustomerId = existingCustomer.id;
+          }
+        } else {
+          console.log("No existing customer found. Inserting new customer in Supabase...");
+          const { data: newCust, error: insertCustErr } = await supabaseServer
+            .from("customers")
+            .insert([customerRow])
+            .select()
+            .single();
+
+          if (insertCustErr || !newCust) {
+            console.error("Failed to insert customer record:", insertCustErr);
+            return res.status(500).json({ success: false, error: "Failed to persist customer: " + (insertCustErr?.message || "Unknown error") });
+          }
+          resolvedCustomerId = newCust.id;
+        }
+      }
+
+      if (!resolvedCustomerId) {
+        return res.status(400).json({ success: false, error: "Valid customer is required to create an order." });
+      }
+
+      // 3. Generate unique order number on server (Section 4)
+      let orderNumber = `3DP-2026-${String(Math.floor(10000 + Math.random() * 90000))}`;
+      const { data: existingOrdNum } = await supabaseServer
+        .from("orders")
+        .select("id")
+        .eq("order_number", orderNumber)
+        .maybeSingle();
+      if (existingOrdNum) {
+        orderNumber = `3DP-2026-${String(Math.floor(10000 + Math.random() * 90000))}`;
+      }
+
+      // 4. Session timestamps & initial status (Section 7)
+      const sessionCreatedAt = new Date().toISOString();
+      const sessionExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+      const orderInsertPayload = {
+        order_number: orderNumber,
+        customer_id: resolvedCustomerId,
+        product_id: prodRecord.id,
+        quantity: validatedQty,
+        unit_price: unitPrice,
+        total_amount: totalAmount,
+        customization: customization || {},
+        order_status: "PENDING_PAYMENT",
+        payment_session_created_at: sessionCreatedAt,
+        payment_session_expires_at: sessionExpiresAt,
+      };
+
+      // 5. Insert order into Supabase (Sections 2, 3, 22)
+      console.log("==========================================");
+      console.log("TABLE: orders");
+      console.log("OPERATION: INSERT");
+      console.log("REQUEST DATA:", JSON.stringify(orderInsertPayload));
+
+      const { data: insertedOrder, error: orderInsertErr } = await supabaseServer
+        .from("orders")
+        .insert([orderInsertPayload])
+        .select(`
+          *,
+          product:products(*),
+          customer:customers(*)
+        `)
+        .single();
+
+      console.log("RESPONSE DATA:", insertedOrder);
+      console.log("ERROR:", orderInsertErr);
+      console.log("==========================================");
+
+      if (orderInsertErr || !insertedOrder) {
+        console.error("Supabase order insert failed:", orderInsertErr);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to persist order to Supabase: " + (orderInsertErr?.message || "Unknown error"),
+        });
+      }
+
+      // 6. Create initial payment record linked to orders.id (Section 8)
+      const paymentPayload = {
+        order_id: insertedOrder.id,
+        amount: totalAmount,
+        payment_status: "PENDING",
+      };
+
+      console.log("==========================================");
+      console.log("TABLE: payments");
+      console.log("OPERATION: INSERT");
+      console.log("REQUEST DATA:", JSON.stringify(paymentPayload));
+
+      const { data: insertedPayment, error: paymentInsertErr } = await supabaseServer
+        .from("payments")
+        .insert([paymentPayload])
+        .select()
+        .single();
+
+      console.log("RESPONSE DATA:", insertedPayment);
+      console.log("ERROR:", paymentInsertErr);
+      console.log("==========================================");
+
+      if (paymentInsertErr) {
+        console.error("Warning: Initial payment record creation failed:", paymentInsertErr);
+      }
+
+      // 7. Return actual database record (Section 14)
+      return res.json({
+        success: true,
+        order: {
+          ...insertedOrder,
+          payment: insertedPayment || null,
+        },
+      });
+    } catch (err: any) {
+      console.error("API POST /api/orders/create error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Internal server error." });
+    }
+  });
+
+  /**
+   * Dedicated endpoint for Track Order page
+   * Allows searching by Order Number (e.g. 3DP-2026-65602) or 10-digit Phone Number
+   */
+  app.get("/api/orders/track", async (req, res) => {
+    try {
+      const queryParam = String(req.query.query || req.query.order || "").trim();
+      if (!queryParam) {
+        return res.status(400).json({ success: false, error: "Order number or phone number is required." });
+      }
+
+      if (!supabaseServer) {
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      const cleanDigits = queryParam.replace(/\D/g, "");
+      const isPhone = cleanDigits.length === 10 && !queryParam.toUpperCase().includes("3DP");
+      const normalizedOrderNum = queryParam.toUpperCase();
+
+      console.log("Track Order API search query:", queryParam, "isPhone:", isPhone);
+
+      let orderData: any = null;
+
+      if (isPhone) {
+        // Search by phone number in customers table (exact 10 digits or matching)
+        const { data: customerRecords } = await supabaseServer
+          .from("customers")
+          .select("id")
+          .or(`phone.eq.${cleanDigits},phone.ilike.%${cleanDigits}%`)
+          .limit(10);
+
+        if (customerRecords && customerRecords.length > 0) {
+          const customerIds = customerRecords.map((c: any) => c.id);
+          const { data: foundOrders } = await supabaseServer
+            .from("orders")
+            .select(`
+              *,
+              product:products(*),
+              customer:customers(*),
+              payment:payments(*)
+            `)
+            .in("customer_id", customerIds)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          if (foundOrders && foundOrders.length > 0) {
+            orderData = foundOrders[0];
+          }
+        }
+      }
+
+      if (!orderData) {
+        // Search by order_number or id
+        let trackQuery = supabaseServer
+          .from("orders")
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*),
+            payment:payments(*)
+          `);
+
+        if (isUuid(queryParam)) {
+          trackQuery = trackQuery.or(`order_number.ilike.%${normalizedOrderNum}%,id.eq.${queryParam}`);
+        } else {
+          trackQuery = trackQuery.ilike("order_number", `%${normalizedOrderNum}%`);
+        }
+
+        const { data: foundOrders, error: findErr } = await trackQuery
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (!findErr && foundOrders && foundOrders.length > 0) {
+          orderData = foundOrders[0];
+        }
+      }
+
+      if (!orderData) {
+        return res.status(404).json({
+          success: false,
+          error: "No matching order found. Please check the order number or phone.",
+        });
+      }
+
+      const paymentData = Array.isArray(orderData.payment) ? orderData.payment[0] || null : orderData.payment;
+      const normalizedOrder = {
+        ...orderData,
+        payment: paymentData,
+      };
+
+      console.log("Track Order API found order:", normalizedOrder.order_number, "status:", normalizedOrder.order_status);
+
+      return res.json({
+        success: true,
+        order: normalizedOrder,
+        orders: [normalizedOrder],
+        payment: paymentData,
+      });
+    } catch (err: any) {
+      console.error("API GET /api/orders/track error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Internal server error." });
+    }
+  });
 
   /**
    * Dedicated endpoint to fetch order & payment details for checkout / payment page
@@ -410,7 +739,11 @@ async function startServer() {
    */
   app.post("/api/payments/submit", async (req, res) => {
     try {
-      const { orderId, amount, transactionId, screenshotUrl, upiId } = req.body;
+      const orderId = req.body.orderId || req.body.order_id;
+      const amount = req.body.amount;
+      const transactionId = req.body.transactionId || req.body.transaction_id;
+      const screenshotUrl = req.body.screenshotUrl || req.body.screenshot_url;
+      const upiId = req.body.upiId || req.body.upi_id;
 
       if (!orderId || String(orderId).trim() === "") {
         return res.status(400).json({ success: false, error: "Order ID is required." });
@@ -491,21 +824,39 @@ async function startServer() {
       let paymentRecordId = existingPayment?.id;
 
       if (existingPayment) {
+        console.log("==========================================");
+        console.log("TABLE: payments");
+        console.log("OPERATION: UPDATE");
+        console.log("REQUEST DATA:", JSON.stringify(paymentPayload));
+
         const { error: paymentUpdateErr } = await supabaseServer
           .from("payments")
           .update(paymentPayload)
           .eq("id", existingPayment.id);
+
+        console.log("RESPONSE DATA:", existingPayment.id);
+        console.log("ERROR:", paymentUpdateErr);
+        console.log("==========================================");
 
         if (paymentUpdateErr) {
           console.error("Payment update error:", paymentUpdateErr);
           return res.status(500).json({ success: false, error: "Failed to update payment record." });
         }
       } else {
+        console.log("==========================================");
+        console.log("TABLE: payments");
+        console.log("OPERATION: INSERT");
+        console.log("REQUEST DATA:", JSON.stringify(paymentPayload));
+
         const { data: newPayment, error: paymentInsertErr } = await supabaseServer
           .from("payments")
           .insert([paymentPayload])
           .select("id")
           .single();
+
+        console.log("RESPONSE DATA:", newPayment);
+        console.log("ERROR:", paymentInsertErr);
+        console.log("==========================================");
 
         if (paymentInsertErr) {
           console.error("Payment insert error:", paymentInsertErr);
@@ -515,6 +866,11 @@ async function startServer() {
       }
 
       // 4. Update order status to PAYMENT_PROCESSING
+      console.log("==========================================");
+      console.log("TABLE: orders");
+      console.log("OPERATION: UPDATE");
+      console.log("REQUEST DATA:", JSON.stringify({ id: existingOrder.id, order_status: "PAYMENT_PROCESSING" }));
+
       const { error: orderStatusErr } = await supabaseServer
         .from("orders")
         .update({
@@ -522,6 +878,10 @@ async function startServer() {
           updated_at: new Date().toISOString(),
         })
         .eq("id", existingOrder.id);
+
+      console.log("RESPONSE DATA:", { id: existingOrder.id, order_status: "PAYMENT_PROCESSING" });
+      console.log("ERROR:", orderStatusErr);
+      console.log("==========================================");
 
       if (orderStatusErr) {
         console.error("Order status update error:", orderStatusErr);
@@ -560,108 +920,6 @@ async function startServer() {
     }
   });
 
-  /**
-   * Dedicated endpoint for Track Order page
-   * Allows searching by Order Number (e.g. 3DP-2026-65602) or 10-digit Phone Number
-   */
-  app.get("/api/orders/track", async (req, res) => {
-    try {
-      const queryParam = String(req.query.query || req.query.order || "").trim();
-      if (!queryParam) {
-        return res.status(400).json({ success: false, error: "Order number or phone number is required." });
-      }
-
-      if (!supabaseServer) {
-        return res.status(503).json({ success: false, error: "Database service unavailable." });
-      }
-
-      const cleanDigits = queryParam.replace(/\D/g, "");
-      const isPhone = cleanDigits.length === 10;
-      const normalizedOrderNum = queryParam.toUpperCase();
-
-      console.log("Track Order API search query:", queryParam, "isPhone:", isPhone);
-
-      let orderData: any = null;
-
-      if (isPhone) {
-        // Search by phone number in customers table (exact 10 digits or matching)
-        const { data: customerRecords } = await supabaseServer
-          .from("customers")
-          .select("id")
-          .or(`phone.eq.${cleanDigits},phone.ilike.%${cleanDigits}%`)
-          .limit(10);
-
-        if (customerRecords && customerRecords.length > 0) {
-          const customerIds = customerRecords.map((c: any) => c.id);
-          const { data: foundOrders } = await supabaseServer
-            .from("orders")
-            .select(`
-              *,
-              product:products(*),
-              customer:customers(*),
-              payment:payments(*)
-            `)
-            .in("customer_id", customerIds)
-            .order("created_at", { ascending: false })
-            .limit(1);
-
-          if (foundOrders && foundOrders.length > 0) {
-            orderData = foundOrders[0];
-          }
-        }
-      }
-
-      if (!orderData) {
-        // Search by order_number or id
-        let trackQuery = supabaseServer
-          .from("orders")
-          .select(`
-            *,
-            product:products(*),
-            customer:customers(*),
-            payment:payments(*)
-          `);
-
-        if (isUuid(queryParam)) {
-          trackQuery = trackQuery.or(`order_number.ilike.%${normalizedOrderNum}%,id.eq.${queryParam}`);
-        } else {
-          trackQuery = trackQuery.ilike("order_number", `%${normalizedOrderNum}%`);
-        }
-
-        const { data: foundOrders, error: findErr } = await trackQuery
-          .order("created_at", { ascending: false })
-          .limit(1);
-
-        if (!findErr && foundOrders && foundOrders.length > 0) {
-          orderData = foundOrders[0];
-        }
-      }
-
-      if (!orderData) {
-        return res.status(404).json({
-          success: false,
-          error: "No matching order found. Please check the order number or phone.",
-        });
-      }
-
-      const paymentData = Array.isArray(orderData.payment) ? orderData.payment[0] || null : orderData.payment;
-      const normalizedOrder = {
-        ...orderData,
-        payment: paymentData,
-      };
-
-      console.log("Track Order API found order:", normalizedOrder.order_number, "status:", normalizedOrder.order_status);
-
-      return res.json({
-        success: true,
-        order: normalizedOrder,
-        payment: paymentData,
-      });
-    } catch (err: any) {
-      console.error("API GET /api/orders/track error:", err);
-      return res.status(500).json({ success: false, error: err.message || "Internal server error." });
-    }
-  });
 
   /**
    * Backend Payment Session Verification Endpoint

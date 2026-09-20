@@ -115,13 +115,8 @@ export const TrackOrder: React.FC = () => {
       if (foundOrder) {
         setOrder(foundOrder);
       } else {
-        setOrder((prev) => {
-          if (prev && (prev.order_number.toLowerCase() === searchTerm.trim().toLowerCase() || prev.id === searchTerm.trim())) {
-            return prev;
-          }
-          showToast('No matching order found. Please check the order number or phone.', 'info');
-          return null;
-        });
+        setOrder(null);
+        showToast('No matching order found. Please check the order number or phone.', 'info');
       }
     } catch (err: any) {
       showToast('Error searching for order.', 'error');

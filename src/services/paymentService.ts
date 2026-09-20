@@ -168,82 +168,28 @@ export const paymentService = {
     }
 
     // 1. Call dedicated server endpoint to create/update payment record and update orders.order_status = 'PAYMENT_PROCESSING'
-    try {
-      const res = await fetch('/api/payments/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId,
-          amount,
-          transactionId,
-          screenshotUrl,
-          upiId,
-        }),
-      });
+    const res = await fetch('/api/payments/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId,
+        amount,
+        transactionId,
+        screenshotUrl,
+        upiId,
+      }),
+    });
 
-      if (res.ok) {
-        const result = await res.json();
-        if (result.success && result.payment) {
-          const returnedPayment: Payment = {
-            id: result.payment.id || 'pay-' + Date.now(),
-            order_id: result.order?.id || orderId,
-            amount: result.order?.total_amount || amount,
-            transaction_id: result.payment.transaction_id || transactionId,
-            screenshot_url: screenshotUrl || undefined,
-            upi_id: upiId || undefined,
-            payment_status: 'PENDING',
-            detected_upi_id: analysis?.detected_upi_id,
-            detected_transaction_id: analysis?.detected_transaction_id || transactionId,
-            detected_amount: analysis?.detected_amount || amount,
-            detected_payment_status: analysis?.detected_payment_status || 'SUCCESS',
-            ocr_confidence: analysis?.ocr_confidence || (screenshotUrl ? 0.92 : undefined),
-            upi_match: analysis?.upi_match ?? true,
-            amount_match: analysis?.amount_match ?? true,
-            transaction_match: analysis?.transaction_match ?? Boolean(transactionId),
-            is_duplicate_transaction: analysis?.is_duplicate_transaction ?? false,
-            duplicate_order_number: analysis?.duplicate_order_number,
-            screenshot_analysis_status: analysis?.screenshot_analysis_status || (screenshotUrl ? 'ANALYZED' : 'NOT_ANALYZED'),
-            receiver_name: analysis?.receiver_name || 'PRINTLAB 3D',
-            sender_name: analysis?.sender_name,
-            payment_date: analysis?.payment_date,
-            payment_time: analysis?.payment_time,
-            warnings: analysis?.warnings || [],
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-
-          // Update local cache so tracking immediately reflects payment submission
-          try {
-            const raw = localStorage.getItem('printlab_orders_data_v1');
-            if (raw) {
-              const current: any[] = JSON.parse(raw);
-              const idx = current.findIndex((o) => o.id === orderId || o.order_number === orderId);
-              if (idx !== -1) {
-                current[idx] = {
-                  ...current[idx],
-                  order_status: 'PAYMENT_PROCESSING',
-                  payment: returnedPayment,
-                  updated_at: new Date().toISOString(),
-                };
-                localStorage.setItem('printlab_orders_data_v1', JSON.stringify(current));
-              }
-            }
-          } catch {
-            // ignore
-          }
-
-          return returnedPayment;
-        }
-      }
-    } catch (apiErr) {
-      console.warn('POST /api/payments/submit error, falling back to local/Supabase:', apiErr);
+    const result = await res.json();
+    if (!res.ok || !result.success || !result.payment) {
+      throw new Error(result.error || 'Failed to submit payment proof to database.');
     }
 
-    const paymentData: Payment = {
-      id: 'pay-' + Date.now(),
-      order_id: orderId,
-      amount,
-      transaction_id: transactionId || undefined,
+    const returnedPayment: Payment = {
+      id: result.payment.id,
+      order_id: result.order?.id || orderId,
+      amount: result.order?.total_amount || amount,
+      transaction_id: result.payment.transaction_id || transactionId,
       screenshot_url: screenshotUrl || undefined,
       upi_id: upiId || undefined,
       payment_status: 'PENDING',
@@ -267,50 +213,7 @@ export const paymentService = {
       updated_at: new Date().toISOString(),
     };
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase
-          .from('payments')
-          .upsert({
-            order_id: orderId,
-            amount,
-            transaction_id: transactionId,
-            screenshot_url: screenshotUrl,
-            upi_id: upiId,
-            payment_status: 'PENDING',
-            detected_upi_id: paymentData.detected_upi_id,
-            detected_transaction_id: paymentData.detected_transaction_id,
-            detected_amount: paymentData.detected_amount,
-            detected_payment_status: paymentData.detected_payment_status,
-            ocr_confidence: paymentData.ocr_confidence,
-            upi_match: paymentData.upi_match,
-            amount_match: paymentData.amount_match,
-            transaction_match: paymentData.transaction_match,
-            screenshot_analysis_status: paymentData.screenshot_analysis_status,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'order_id' });
-
-        if (error) throw error;
-      } catch (err) {
-        console.warn('Supabase submit payment proof error:', err);
-      }
-    }
-
-    // Register transaction with backend registry
-    if (transactionId) {
-      fetch('/api/register-transaction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transactionId, orderId, amount }),
-      }).catch(() => {});
-    }
-
-    // Update order status to PAYMENT_PROCESSING
-    if (targetOrderCheck) {
-      await orderService.updateStatus(targetOrderCheck.id, 'PAYMENT_PROCESSING');
-    }
-
-    return paymentData;
+    return returnedPayment;
   },
 
   /**

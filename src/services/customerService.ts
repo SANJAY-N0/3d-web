@@ -95,12 +95,12 @@ export const customerService = {
           }
         }
       } catch (err) {
-        console.warn('Supabase customer createOrUpdate error, saving locally:', err);
+        console.error('Supabase customer createOrUpdate error:', err);
+        throw err;
       }
     }
 
-    saveLocalCustomerProfile(newCustomer);
-    return newCustomer;
+    throw new Error('Database service is not configured.');
   },
 
   async getAll(): Promise<Customer[]> {

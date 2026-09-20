@@ -317,8 +317,6 @@ export const OrderPage: React.FC = () => {
         pincode: customerForm.delivery_method === 'college_delivery' ? '641407' : customerForm.pincode,
       };
 
-      const customer = await customerService.upsertCustomer(customerPayload);
-
       // 5. Prepare customization object
       const customizationData: CustomizationData = {
         customText: customText.trim() || undefined,
@@ -326,9 +324,9 @@ export const OrderPage: React.FC = () => {
         specialInstructions: specialInstructions.trim() || undefined,
       };
 
-      // 6. Create Order
+      // 6. Create Order directly via backend API & Supabase
       const newOrder = await orderService.createOrder({
-        customer_id: customer.id,
+        customer: customerPayload,
         product_id: product.id,
         quantity,
         unit_price: unitPrice,
@@ -349,20 +347,20 @@ export const OrderPage: React.FC = () => {
         }
       }
 
-      // 7. Navigate directly to UPI Payment page
+      // 7. Navigate directly to UPI Payment page with the real database record
       navigate(`/payment/${newOrder.id}`, {
         state: {
           orderId: newOrder.id,
           orderNumber: newOrder.order_number,
           totalAmount: newOrder.total_amount,
           product,
-          customer,
+          customer: newOrder.customer || customerPayload,
           customization: customizationData,
         },
       });
     } catch (err: any) {
       console.error('Order creation error:', err);
-      showToast('Failed to create order. Please try again.', 'error');
+      showToast(err.message || 'Failed to create order. Please try again.', 'error');
     } finally {
       setIsCreatingOrder(false);
     }

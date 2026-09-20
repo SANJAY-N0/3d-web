@@ -3,8 +3,6 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateOrderNumber } from '../lib/upiUtils';
 import { productService } from './productService';
 
-const ORDERS_STORAGE_KEY = 'printlab_orders_data_v1';
-
 const FAKE_ORDER_NUMBERS = new Set(['3DP-2026-00124', '3DP-2026-00125', '3DP-2026-00126']);
 
 function isFakeOrder(o: any): boolean {
@@ -13,30 +11,6 @@ function isFakeOrder(o: any): boolean {
   if (o.product?.name && o.product.name.trim().toLowerCase() === 'nothing') return true;
   if (o.product_id === 'nothing' || o.id === 'nothing') return true;
   return false;
-}
-
-function getLocalOrders(): Order[] {
-  try {
-    const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: any[] = JSON.parse(raw);
-    const cleaned = parsed.filter((o) => !isFakeOrder(o)).map(normalizeOrder);
-    if (cleaned.length !== parsed.length) {
-      saveLocalOrders(cleaned);
-    }
-    return cleaned;
-  } catch {
-    return [];
-  }
-}
-
-function saveLocalOrders(orders: Order[]): void {
-  const cleaned = orders.filter((o) => !isFakeOrder(o)).slice(0, 5);
-  try {
-    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(cleaned));
-  } catch {
-    // ignore
-  }
 }
 
 function normalizeOrder(o: any): Order {
@@ -48,7 +22,7 @@ function normalizeOrder(o: any): Order {
 
 export const orderService = {
   /**
-   * Fetch all orders from Supabase (pure real data, no fake mock fallback)
+   * Fetch all orders from Supabase (pure real database records)
    */
   async getAll(): Promise<Order[]> {
     if (!isSupabaseConfigured || !supabase) {
@@ -81,7 +55,7 @@ export const orderService = {
   },
 
   /**
-   * Fetch order by ID or order number (via server API with fallback to Supabase and local cache)
+   * Fetch order by ID or order number (via server API with fallback to Supabase)
    */
   async getById(idOrOrderNumber: string): Promise<Order | null> {
     if (!idOrOrderNumber || !idOrOrderNumber.trim()) return null;
@@ -132,9 +106,7 @@ export const orderService = {
       }
     }
 
-    // 3. Local cache fallback
-    const all = getLocalOrders();
-    return all.find((o) => (o.id === cleanId || o.order_number.toUpperCase() === cleanId.toUpperCase()) && !isFakeOrder(o)) || null;
+    return null;
   },
 
   /**
@@ -161,61 +133,66 @@ export const orderService = {
         return [];
       }
     }
-
-    const current = getLocalOrders();
-    return current.filter((o) => o.customer_id === customerId || o.customer?.id === customerId);
+    return [];
   },
 
   /**
-   * Create new order with server price validation
+   * Create new order with server-side validation and Supabase persistence
    */
   async create(orderPayload: {
-    customer_id: string;
+    customer?: any;
+    customer_id?: string;
     product_id: string;
     quantity: number;
-    unit_price: number;
-    total_amount: number;
+    unit_price?: number;
+    total_amount?: number;
     customization?: Order['customization'];
-    customer?: Order['customer'];
     product?: Order['product'];
   }): Promise<Order> {
-    const orderNumber = generateOrderNumber();
-    const sessionCreatedAt = new Date().toISOString();
-    // 10-minute payment session window
-    const sessionExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    return this.createOrder(orderPayload);
+  },
 
-    // Price calculation integrity enforcement: total_amount = unit_price * quantity
-    const validatedTotal = Number(orderPayload.unit_price) * Number(orderPayload.quantity);
+  async createOrder(orderPayload: {
+    customer?: any;
+    customer_id?: string;
+    product_id: string;
+    quantity: number;
+    unit_price?: number;
+    total_amount?: number;
+    customization?: Order['customization'];
+    product?: Order['product'];
+  }): Promise<Order> {
+    // 1. Call dedicated backend API endpoint /api/orders/create
+    try {
+      const res = await fetch('/api/orders/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: orderPayload.customer,
+          customer_id: orderPayload.customer_id,
+          product_id: orderPayload.product_id,
+          quantity: orderPayload.quantity,
+          customization: orderPayload.customization,
+        }),
+      });
 
-    const newOrder: Order = {
-      id: 'ord-' + Date.now(),
-      order_number: orderNumber,
-      customer_id: orderPayload.customer_id,
-      product_id: orderPayload.product_id,
-      quantity: orderPayload.quantity,
-      unit_price: orderPayload.unit_price,
-      total_amount: validatedTotal,
-      customization: orderPayload.customization,
-      order_status: 'PENDING_PAYMENT',
-      payment_session_created_at: sessionCreatedAt,
-      payment_session_expires_at: sessionExpiresAt,
-      created_at: sessionCreatedAt,
-      updated_at: sessionCreatedAt,
-      customer: orderPayload.customer,
-      product: orderPayload.product,
-      payment: {
-        id: 'pay-' + Date.now(),
-        order_id: 'ord-' + Date.now(),
-        amount: validatedTotal,
-        payment_status: 'PENDING',
-        created_at: sessionCreatedAt,
-        updated_at: sessionCreatedAt,
-      },
-    };
+      const data = await res.json();
+      if (res.ok && data.success && data.order) {
+        return normalizeOrder(data.order);
+      } else {
+        throw new Error(data.error || 'Failed to create order in database.');
+      }
+    } catch (err: any) {
+      console.error('API /api/orders/create error:', err);
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase
+      // 2. Direct Supabase insert fallback if server endpoint is unreachable
+      if (isSupabaseConfigured && supabase) {
+        const orderNumber = generateOrderNumber();
+        const sessionCreatedAt = new Date().toISOString();
+        const sessionExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        const validatedTotal = Number(orderPayload.unit_price || 0) * Number(orderPayload.quantity || 1);
+
+        const { data: dbOrder, error: dbError } = await supabase
           .from('orders')
           .insert([{
             order_number: orderNumber,
@@ -229,45 +206,42 @@ export const orderService = {
             payment_session_created_at: sessionCreatedAt,
             payment_session_expires_at: sessionExpiresAt,
           }])
-          .select()
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*)
+          `)
           .single();
 
-        if (error) throw error;
-        if (data) {
-          newOrder.id = data.id;
-          newOrder.order_number = data.order_number;
-          // also initialize payment row in Supabase
-          await supabase.from('payments').insert([{
-            order_id: data.id,
-            amount: validatedTotal,
-            payment_status: 'PENDING',
-          }]);
+        if (dbError) {
+          console.error('Direct Supabase order insert failed:', dbError);
+          throw new Error('Database error creating order: ' + dbError.message);
         }
-      } catch (err) {
-        console.warn('Supabase order insert error, saving locally:', err);
+
+        if (dbOrder) {
+          const { data: dbPayment } = await supabase
+            .from('payments')
+            .insert([{
+              order_id: dbOrder.id,
+              amount: validatedTotal,
+              payment_status: 'PENDING',
+            }])
+            .select()
+            .single();
+
+          return normalizeOrder({
+            ...dbOrder,
+            payment: dbPayment || null,
+          });
+        }
       }
+
+      // Do NOT mask database failure by returning fake local orders!
+      throw err;
     }
-
-    const current = getLocalOrders();
-    const updated = [newOrder, ...current];
-    saveLocalOrders(updated);
-    return newOrder;
-  },
-
-  async createOrder(orderPayload: {
-    customer_id: string;
-    product_id: string;
-    quantity: number;
-    unit_price: number;
-    total_amount: number;
-    customization?: Order['customization'];
-    product?: Order['product'];
-  }): Promise<Order> {
-    return this.create(orderPayload);
   },
 
   async updateStatus(orderId: string, status: OrderStatus): Promise<Order> {
-    let updatedOrder: Order | null = null;
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
@@ -283,26 +257,13 @@ export const orderService = {
           .single();
 
         if (error) throw error;
-        if (data) updatedOrder = normalizeOrder(data);
+        if (data) return normalizeOrder(data);
       } catch (err) {
-        console.warn('Supabase status update failed:', err);
+        console.error('Supabase status update failed:', err);
+        throw err;
       }
     }
-
-    const current = getLocalOrders();
-    const index = current.findIndex((o) => o.id === orderId);
-    if (index !== -1) {
-      current[index] = {
-        ...current[index],
-        order_status: status,
-        updated_at: new Date().toISOString(),
-      };
-      saveLocalOrders(current);
-      return current[index];
-    }
-
-    if (updatedOrder) return updatedOrder;
-    throw new Error('Order not found');
+    throw new Error('Database service unavailable');
   },
 
   /**
@@ -313,12 +274,10 @@ export const orderService = {
       try {
         await supabase.from('orders').delete().eq('id', orderId);
       } catch (err) {
-        console.warn('Supabase order delete error:', err);
+        console.error('Supabase order delete error:', err);
+        throw err;
       }
     }
-    const current = getLocalOrders();
-    const filtered = current.filter((o) => o.id !== orderId && o.order_number !== orderId);
-    saveLocalOrders(filtered);
   },
 
   /**
@@ -350,32 +309,19 @@ export const orderService = {
       modified = true;
     }
 
-    if (modified) {
-      const current = getLocalOrders();
-      const index = current.findIndex((o) => o.id === currentOrder.id || o.order_number === currentOrder.order_number);
-      if (index !== -1) {
-        current[index] = {
-          ...current[index],
-          ...currentOrder,
-          updated_at: new Date().toISOString(),
-        };
-        saveLocalOrders(current);
-      }
-
-      if (isSupabaseConfigured && supabase) {
-        try {
-          await supabase
-            .from('orders')
-            .update({
-              order_status: currentOrder.order_status,
-              payment_session_created_at: currentOrder.payment_session_created_at,
-              payment_session_expires_at: currentOrder.payment_session_expires_at,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', currentOrder.id);
-        } catch (err) {
-          console.warn('Supabase session sync error:', err);
-        }
+    if (modified && isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('orders')
+          .update({
+            order_status: currentOrder.order_status,
+            payment_session_created_at: currentOrder.payment_session_created_at,
+            payment_session_expires_at: currentOrder.payment_session_expires_at,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentOrder.id);
+      } catch (err) {
+        console.warn('Supabase session sync error:', err);
       }
     }
 
@@ -433,24 +379,14 @@ export const orderService = {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.order && !isFakeOrder(data.order)) {
-          const normalized = normalizeOrder(data.order);
-          // Keep local cache fresh
-          const current = getLocalOrders();
-          const idx = current.findIndex((o) => o.id === normalized.id || o.order_number === normalized.order_number);
-          if (idx !== -1) {
-            current[idx] = { ...current[idx], ...normalized };
-          } else {
-            current.unshift(normalized);
-          }
-          saveLocalOrders(current);
-          return normalized;
+          return normalizeOrder(data.order);
         }
       }
     } catch (err) {
       console.warn('Backend trackOrder error, falling back:', err);
     }
 
-    // Fallback: search locally and Supabase
+    // Fallback: search Supabase directly
     const results = await this.searchOrders(q);
     return results.length > 0 ? results[0] : null;
   },
@@ -469,7 +405,7 @@ export const orderService = {
         }
       }
     } catch (err) {
-      console.warn('Backend track search error, falling back:', err);
+      console.warn('Backend track search error, falling back to direct Supabase query:', err);
     }
 
     if (isSupabaseConfigured && supabase) {
@@ -502,15 +438,6 @@ export const orderService = {
       }
     }
 
-    const all = await this.getAll();
-    const qLower = q.toLowerCase();
-    const cleanDigits = q.replace(/\D/g, '');
-    return all.filter((o) => {
-      const matchNum = o.order_number.toLowerCase().includes(qLower);
-      const matchPhone = cleanDigits.length >= 4 && (o.customer?.phone?.replace(/\D/g, '').includes(cleanDigits) || false);
-      const matchName = o.customer?.name?.toLowerCase().includes(qLower) || false;
-      const matchTx = o.payment?.transaction_id?.toLowerCase().includes(qLower) || false;
-      return matchNum || matchPhone || matchName || matchTx;
-    });
+    return [];
   }
 };
