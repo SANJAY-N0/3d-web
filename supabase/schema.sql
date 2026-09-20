@@ -254,32 +254,32 @@ DROP POLICY IF EXISTS "Public can register customer profile" ON customers;
 CREATE POLICY "Public can register customer profile" 
   ON customers FOR INSERT WITH CHECK (true);
 
--- Customers can view their own profile; admins can view all
+-- Customers can view only their own profile; admins can view all
+DROP POLICY IF EXISTS "Customers view own profile or admins view all" ON customers;
 CREATE POLICY "Customers view own profile or admins view all" 
   ON customers FOR SELECT 
   USING (
     (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id)
     OR is_admin()
-    OR auth.role() = 'authenticated'
-    OR true -- Supports guest checkout lookup by phone/email
   );
 
--- Customers can update their own profile; admins can update all
+-- Customers can update only their own profile; admins can update all
+DROP POLICY IF EXISTS "Customers update own profile or admins update all" ON customers;
 CREATE POLICY "Customers update own profile or admins update all" 
   ON customers FOR UPDATE 
   USING (
     (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id)
     OR is_admin()
-    OR auth.role() = 'authenticated'
-    OR true -- Supports checkout details update
   );
 
 -- 8.3 ORDERS POLICIES
--- Public can place orders
+-- Public and customers can place orders
+DROP POLICY IF EXISTS "Public can insert orders" ON orders;
 CREATE POLICY "Public can insert orders" 
   ON orders FOR INSERT WITH CHECK (true);
 
--- Customers can view their own orders; admins can view all
+-- Customers can view only their own orders; admins can view all
+DROP POLICY IF EXISTS "Customers view own orders or admins view all" ON orders;
 CREATE POLICY "Customers view own orders or admins view all" 
   ON orders FOR SELECT 
   USING (
@@ -287,36 +287,62 @@ CREATE POLICY "Customers view own orders or admins view all"
       SELECT id FROM customers WHERE auth_user_id = auth.uid()
     )
     OR is_admin()
-    OR auth.role() = 'authenticated'
-    OR true -- Supports direct order confirmation & payment page access
   );
 
--- Public can update order status during checkout/payment session; admins have full access
-CREATE POLICY "Update order status and session" 
-  ON orders FOR UPDATE USING (true);
+-- Only admins can update orders arbitrarily; customers can update pending status during checkout
+DROP POLICY IF EXISTS "Update order status and session" ON orders;
+DROP POLICY IF EXISTS "Admins can update orders" ON orders;
+CREATE POLICY "Admins can update orders" 
+  ON orders FOR UPDATE 
+  USING (is_admin());
+
+DROP POLICY IF EXISTS "Customers can update own pending order status" ON orders;
+CREATE POLICY "Customers can update own pending order status" 
+  ON orders FOR UPDATE 
+  USING (
+    customer_id IN (
+      SELECT id FROM customers WHERE auth_user_id = auth.uid()
+    )
+    AND order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION')
+  );
 
 -- 8.4 PAYMENTS POLICIES
 -- Public can submit payment proof for orders
+DROP POLICY IF EXISTS "Public can submit payments" ON payments;
 CREATE POLICY "Public can submit payments" 
   ON payments FOR INSERT WITH CHECK (true);
 
--- Customers and admins can view payment records
+-- Only order owners and admins can view payment records
+DROP POLICY IF EXISTS "View payment records" ON payments;
 CREATE POLICY "View payment records" 
-  ON payments FOR SELECT USING (true);
+  ON payments FOR SELECT 
+  USING (
+    is_admin()
+    OR order_id IN (
+      SELECT id FROM orders WHERE customer_id IN (
+        SELECT id FROM customers WHERE auth_user_id = auth.uid()
+      )
+    )
+  );
 
--- Customers can update proof / Admins can verify payments
-CREATE POLICY "Update payment records" 
-  ON payments FOR UPDATE USING (true);
+-- Only verified admins can update/verify payment records
+DROP POLICY IF EXISTS "Update payment records" ON payments;
+DROP POLICY IF EXISTS "Admins can verify and update payments" ON payments;
+CREATE POLICY "Admins can verify and update payments" 
+  ON payments FOR UPDATE 
+  USING (is_admin());
 
 -- 8.5 SETTINGS POLICIES
--- Public can read settings (UPI ID, merchant name, support contacts, Cloudinary)
+-- Public can read public settings (UPI ID, merchant name, support contacts, Cloudinary)
+DROP POLICY IF EXISTS "Public settings are viewable by everyone" ON settings;
 CREATE POLICY "Public settings are viewable by everyone" 
   ON settings FOR SELECT USING (true);
 
 -- Only admins can modify settings
+DROP POLICY IF EXISTS "Admins can manage settings" ON settings;
 CREATE POLICY "Admins can manage settings" 
   ON settings FOR ALL 
-  USING (is_admin() OR auth.role() = 'authenticated');
+  USING (is_admin());
 
 -- 8.6 ADMINS POLICIES
 DROP POLICY IF EXISTS "Admins viewable by authenticated users" ON admins;
@@ -342,18 +368,32 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Public access for product images
+DROP POLICY IF EXISTS "Public Access for Product Images" ON storage.objects;
 CREATE POLICY "Public Access for Product Images"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'product-images');
 
--- Authenticated upload for payment screenshots
+-- Public upload for payment screenshots during checkout
+DROP POLICY IF EXISTS "Allow Payment Screenshot Uploads" ON storage.objects;
 CREATE POLICY "Allow Payment Screenshot Uploads"
   ON storage.objects FOR INSERT
   WITH CHECK (bucket_id = 'payment-proofs');
 
+-- Restrict payment screenshot reads to order owners and admins
+DROP POLICY IF EXISTS "Allow Payment Screenshot Reads" ON storage.objects;
 CREATE POLICY "Allow Payment Screenshot Reads"
   ON storage.objects FOR SELECT
-  USING (bucket_id = 'payment-proofs');
+  USING (
+    bucket_id = 'payment-proofs'
+    AND (
+      is_admin()
+      OR (auth.uid() IS NOT NULL AND (storage.foldername(name))[1] IN (
+        SELECT id FROM orders WHERE customer_id IN (
+          SELECT id FROM customers WHERE auth_user_id = auth.uid()
+        )
+      ))
+    )
+  );
 
 -- ==========================================================
 -- 10. HOMEPAGE SHOWCASE TABLE
@@ -395,7 +435,7 @@ CREATE POLICY "Public showcase is viewable by everyone"
   ON homepage_showcase FOR SELECT 
   USING (true);
 
--- Admins have full access to manage showcase items
+-- Only verified admins have access to insert, update, or delete showcase items
 DROP POLICY IF EXISTS "Admins can manage showcase" ON homepage_showcase;
 CREATE POLICY "Admins can manage showcase" 
   ON homepage_showcase FOR ALL 
@@ -405,5 +445,6 @@ CREATE POLICY "Admins can manage showcase"
       SELECT 1 FROM admins 
       WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
       AND admins.role = 'admin'
-    ) OR true
+    )
   );
+

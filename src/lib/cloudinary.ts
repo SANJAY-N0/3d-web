@@ -1,4 +1,19 @@
 import { CloudinaryUploadResponse, CloudinaryConfigStatus } from '../types';
+import { supabase } from './supabase';
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  if (supabase) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        return { Authorization: `Bearer ${data.session.access_token}` };
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return {};
+}
 
 export const DEFAULT_CLOUDINARY_CLOUD_NAME = 'jushiok7';
 
@@ -182,10 +197,12 @@ export async function uploadToCloudinary(params: {
     imagePayload = await fileToBase64(params.file);
   }
 
+  const authHeaders = await getAuthHeaders();
   const response = await fetch('/api/cloudinary/upload', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
     },
     body: JSON.stringify({
       image: imagePayload,
@@ -208,11 +225,12 @@ export async function uploadToCloudinary(params: {
  * Deletes an image from Cloudinary by public ID via backend secure proxy
  */
 export async function deleteFromCloudinary(publicId: string): Promise<{ success: boolean; message?: string }> {
+  const authHeaders = await getAuthHeaders();
   const response = await fetch('/api/cloudinary/delete', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-role': 'admin',
+      ...authHeaders,
     },
     body: JSON.stringify({ publicId }),
   });

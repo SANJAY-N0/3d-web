@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { createRequire } from "module";
+import { createClient } from "@supabase/supabase-js";
 
 const require = createRequire(import.meta.url);
 
@@ -14,11 +15,11 @@ dotenv.config({ override: true });
 
 delete process.env.CLOUDINARY_URL;
 
-// Normalize API secret
+// Read credentials strictly from environment variables without hardcoded fallbacks
 function getResolvedCloudinaryCredentials() {
-  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || "jushiok7").trim();
-  const apiKey = (process.env.CLOUDINARY_API_KEY || "873981713524356").trim();
-  let apiSecret = (process.env.CLOUDINARY_API_SECRET || "17qkUtU1PH-KRltAlsM0lC8KCdw").trim();
+  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || "").trim();
+  const apiKey = (process.env.CLOUDINARY_API_KEY || "").trim();
+  let apiSecret = (process.env.CLOUDINARY_API_SECRET || "").trim();
   apiSecret = apiSecret
     .replace(/MOIC8KCdw/g, "M0lC8KCdw")
     .replace(/MOlC8KCdw/g, "M0lC8KCdw")
@@ -60,6 +61,19 @@ function isCloudinaryConfigured(): boolean {
   }
 }
 
+// Supabase Server-Side Client for Token & Role Verification
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+let supabaseServer: any = null;
+
+if (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith("https://")) {
+  try {
+    supabaseServer = createClient(supabaseUrl, supabaseAnonKey);
+  } catch (err) {
+    console.warn("Failed to initialize server-side Supabase client:", err);
+  }
+}
+
 // Lazy Gemini client helper
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
@@ -81,7 +95,16 @@ const knownTransactionRegistry = new Map<string, { orderNumber: string; orderId:
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+  // Security Headers Middleware
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    next();
+  });
 
   // JSON Body Parser for base64 image uploads (limit 15mb)
   app.use(express.json({ limit: "15mb" }));
@@ -93,24 +116,65 @@ async function startServer() {
       status: "ok",
       timestamp: new Date().toISOString(),
       hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+      hasCloudinary: isCloudinaryConfigured(),
+      hasSupabase: Boolean(supabaseServer),
     });
   });
 
   /**
-   * Backend Authorization Middleware: Enforce administrator permissions
+   * Backend Authorization Middleware: Enforces verified Supabase administrator privileges
    */
-  const requireAdminAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const roleHeader = req.headers["x-user-role"] || req.headers["x-role"];
-    const authHeader = req.headers.authorization;
+  const requireAdminAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({
+          success: false,
+          error: "Authentication required. Missing Bearer token.",
+        });
+      }
 
-    if (roleHeader === "admin" || (authHeader && authHeader.toLowerCase().includes("admin"))) {
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+      if (!supabaseServer) {
+        return res.status(503).json({
+          success: false,
+          error: "Authentication service is unavailable on the server.",
+        });
+      }
+
+      // Verify user JWT token with Supabase Auth
+      const { data: { user }, error: userError } = await supabaseServer.auth.getUser(token);
+      if (userError || !user) {
+        return res.status(401).json({
+          success: false,
+          error: "Invalid or expired administrator token. Please log in again.",
+        });
+      }
+
+      // Verify user exists in the admins table with role = 'admin'
+      const { data: adminRecord, error: adminError } = await supabaseServer
+        .from("admins")
+        .select("id, email, role")
+        .or(`auth_user_id.eq.${user.id},email.eq.${user.email}`)
+        .eq("role", "admin")
+        .maybeSingle();
+
+      if (adminError || !adminRecord) {
+        return res.status(403).json({
+          success: false,
+          error: "Access forbidden. Verified administrator privileges required.",
+        });
+      }
+
+      (req as any).adminUser = user;
       return next();
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: "Internal authentication verification error.",
+      });
     }
-
-    return res.status(403).json({
-      success: false,
-      error: "Access forbidden. Administrator privileges required.",
-    });
   };
 
   /**
@@ -120,6 +184,7 @@ async function startServer() {
     return res.json({
       authorized: true,
       role: "admin",
+      user: (req as any).adminUser ? { id: (req as any).adminUser.id, email: (req as any).adminUser.email } : null,
       timestamp: new Date().toISOString(),
     });
   });
@@ -235,18 +300,52 @@ async function startServer() {
   /**
    * Backend Payment Session Verification Endpoint
    * Enforces 10-minute window before accepting any payment actions
+   * Validates directly against database if orderId is provided
    */
-  app.post("/api/payments/verify-session", (req, res) => {
+  app.post("/api/payments/verify-session", async (req, res) => {
     try {
       const { expiresAt, orderId } = req.body;
-      if (!expiresAt) {
-        return res.status(400).json({ valid: false, error: "Missing session expiration timestamp." });
+      let expiryTime: number | null = null;
+      let orderStatus: string | null = null;
+
+      if (orderId && supabaseServer) {
+        const { data: orderData } = await supabaseServer
+          .from("orders")
+          .select("payment_session_expires_at, order_status")
+          .or(`id.eq.${orderId},order_number.eq.${orderId}`)
+          .maybeSingle();
+
+        if (orderData) {
+          orderStatus = orderData.order_status;
+          if (orderData.payment_session_expires_at) {
+            expiryTime = new Date(orderData.payment_session_expires_at).getTime();
+          }
+        }
       }
 
-      const expiryTime = new Date(expiresAt).getTime();
-      const isExpired = Date.now() >= expiryTime;
+      if (!expiryTime) {
+        if (!expiresAt) {
+          return res.status(400).json({ valid: false, error: "Missing session expiration timestamp or order ID." });
+        }
+        expiryTime = new Date(expiresAt).getTime();
+      }
 
+      if (orderStatus === "PAYMENT_EXPIRED" || orderStatus === "CANCELLED") {
+        return res.status(400).json({
+          valid: false,
+          expired: true,
+          error: "This order has been cancelled or the payment session has expired.",
+        });
+      }
+
+      const isExpired = Date.now() >= expiryTime;
       if (isExpired) {
+        if (orderId && supabaseServer && orderStatus === "PENDING_PAYMENT") {
+          await supabaseServer
+            .from("orders")
+            .update({ order_status: "PAYMENT_EXPIRED" })
+            .or(`id.eq.${orderId},order_number.eq.${orderId}`);
+        }
         return res.status(400).json({
           valid: false,
           expired: true,
@@ -263,6 +362,51 @@ async function startServer() {
       });
     } catch (err: any) {
       return res.status(500).json({ valid: false, error: err.message || "Session verification failed." });
+    }
+  });
+
+  /**
+   * Backend Duplicate Transaction Verification Endpoint
+   */
+  app.post("/api/payments/check-duplicate", async (req, res) => {
+    try {
+      const { transactionId, orderId } = req.body;
+      if (!transactionId || String(transactionId).trim().length < 6) {
+        return res.json({ isDuplicate: false });
+      }
+
+      const cleanTx = String(transactionId).trim().toUpperCase();
+
+      // 1. Check in-memory registry
+      const inMemory = knownTransactionRegistry.get(cleanTx);
+      if (inMemory && inMemory.orderId !== orderId) {
+        return res.json({
+          isDuplicate: true,
+          orderNumber: inMemory.orderNumber,
+        });
+      }
+
+      // 2. Check Supabase payments table
+      if (supabaseServer) {
+        const { data, error } = await supabaseServer
+          .from("payments")
+          .select("id, order_id, transaction_id, payment_status, orders(id, order_number)")
+          .ilike("transaction_id", cleanTx)
+          .neq("payment_status", "REJECTED")
+          .maybeSingle();
+
+        if (!error && data && data.order_id !== orderId) {
+          const matchedOrderNum = (data as any).orders?.order_number || "Existing Order";
+          return res.json({
+            isDuplicate: true,
+            orderNumber: matchedOrderNum,
+          });
+        }
+      }
+
+      return res.json({ isDuplicate: false });
+    } catch {
+      return res.json({ isDuplicate: false });
     }
   });
 
@@ -388,27 +532,21 @@ Extract the following exact payment details with high precision:
           if (parsed.paymentDate) paymentDate = parsed.paymentDate;
           if (parsed.paymentTime) paymentTime = parsed.paymentTime;
         } catch (aiErr) {
-          console.warn("Gemini vision analysis error, using intelligent local heuristic extractor:", aiErr);
+          console.warn("Gemini vision analysis error:", aiErr);
         }
       }
 
-      // If AI was offline or returned empty fields, apply intelligent image & metadata heuristic
+      // If AI was offline or could not detect required details, do NOT generate fake transactions
       if (!detectedTransactionId && !detectedAmount) {
-        // Fallback intelligent generator based on image bytes hash / expected info
-        const pseudoRandomSeed = cleanBase64
-          .slice(100, 150)
-          .split("")
-          .reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
-        const generatedUtr = `${Math.floor(400000000000 + (pseudoRandomSeed % 500000000000))}`;
-
-        detectedTransactionId = generatedUtr;
-        detectedAmount = expectedAmount ? Number(expectedAmount) : 299;
-        detectedUpiId = expectedUpiId || "printlab3d@okhdfcbank";
-        detectedPaymentStatus = "SUCCESS";
-        ocrConfidence = 0.94;
-        receiverName = "PRINTLAB 3D";
-        paymentDate = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-        paymentTime = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+        return res.status(422).json({
+          success: false,
+          error: "Could not automatically extract payment details from screenshot. Please enter your 12-digit UTR manually.",
+          analysisStatus: "FAILED",
+          warnings: ["Could not extract payment details from screenshot. Please enter your 12-digit UTR manually."],
+          isValidLooking: false,
+          expectedUpiId,
+          expectedAmount: expectedAmount ? Number(expectedAmount) : null,
+        });
       }
 
       // Normalization and Validation Checks
@@ -547,10 +685,10 @@ Extract the following exact payment details with high precision:
   });
 
   /**
-   * Secure Cloudinary Image Upload Endpoint
+   * Secure Cloudinary Image Upload Endpoint (Protected with Admin Authorization)
    * Handles main and gallery product image uploads into structured folders
    */
-  app.post("/api/cloudinary/upload", async (req, res) => {
+  app.post("/api/cloudinary/upload", requireAdminAuth, async (req, res) => {
     try {
       if (!isCloudinaryConfigured()) {
         return res.status(503).json({

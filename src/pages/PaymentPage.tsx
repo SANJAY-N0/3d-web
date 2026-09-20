@@ -257,10 +257,10 @@ export const PaymentPage: React.FC = () => {
         upiId: getMerchantUPIConfig().upiId,
       });
 
-      // 4. Update order status
-      await orderService.updateStatus(order.id, 'PAYMENT_CONFIRMED');
+      // 4. Update order status to PENDING_PAYMENT_VERIFICATION
+      await orderService.updateStatus(order.id, 'PENDING_PAYMENT_VERIFICATION');
 
-      showToast('Payment submitted successfully! Your order is now in queue.', 'success');
+      showToast('Payment submitted successfully! Verification in progress.', 'success');
 
       // 5. Navigate to Order Tracking
       navigate(`/track?order=${order.order_number}`, {

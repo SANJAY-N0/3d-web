@@ -33,8 +33,12 @@ function getLocalOrders(): Order[] {
 }
 
 function saveLocalOrders(orders: Order[]): void {
-  const cleaned = orders.filter((o) => !isFakeOrder(o));
-  localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(cleaned));
+  const cleaned = orders.filter((o) => !isFakeOrder(o)).slice(0, 5);
+  try {
+    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(cleaned));
+  } catch {
+    // ignore
+  }
 }
 
 function normalizeOrder(o: any): Order {
@@ -71,7 +75,6 @@ export const orderService = {
       }
 
       const normalized = (data || []).map(normalizeOrder).filter((o) => !isFakeOrder(o));
-      saveLocalOrders(normalized);
       return normalized;
     } catch (err) {
       console.error('Supabase orders fetch error:', err);
@@ -113,8 +116,29 @@ export const orderService = {
    * Fetch customer orders
    */
   async getByCustomerId(customerId: string): Promise<Order[]> {
-    const all = await this.getAll();
-    return all.filter((o) => o.customer_id === customerId || o.customer?.id === customerId);
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('orders')
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*),
+            payment:payments(*)
+          `)
+          .eq('customer_id', customerId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        return (data || []).map(normalizeOrder).filter((o) => !isFakeOrder(o));
+      } catch (err) {
+        console.warn('Supabase customer orders query error:', err);
+        return [];
+      }
+    }
+
+    const current = getLocalOrders();
+    return current.filter((o) => o.customer_id === customerId || o.customer?.id === customerId);
   },
 
   /**
@@ -218,16 +242,23 @@ export const orderService = {
   },
 
   async updateStatus(orderId: string, status: OrderStatus): Promise<Order> {
+    let updatedOrder: Order | null = null;
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from('orders')
           .update({ order_status: status, updated_at: new Date().toISOString() })
           .eq('id', orderId)
-          .select()
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*),
+            payment:payments(*)
+          `)
           .single();
 
         if (error) throw error;
+        if (data) updatedOrder = normalizeOrder(data);
       } catch (err) {
         console.warn('Supabase status update failed:', err);
       }
@@ -235,15 +266,18 @@ export const orderService = {
 
     const current = getLocalOrders();
     const index = current.findIndex((o) => o.id === orderId);
-    if (index === -1) throw new Error('Order not found');
+    if (index !== -1) {
+      current[index] = {
+        ...current[index],
+        order_status: status,
+        updated_at: new Date().toISOString(),
+      };
+      saveLocalOrders(current);
+      return current[index];
+    }
 
-    current[index] = {
-      ...current[index],
-      order_status: status,
-      updated_at: new Date().toISOString(),
-    };
-    saveLocalOrders(current);
-    return current[index];
+    if (updatedOrder) return updatedOrder;
+    throw new Error('Order not found');
   },
 
   /**
@@ -366,13 +400,38 @@ export const orderService = {
   },
 
   async searchOrders(query: string): Promise<Order[]> {
+    const q = query.trim();
+    if (!q) return [];
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('orders')
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*),
+            payment:payments(*)
+          `)
+          .or(`order_number.ilike.%${q}%,id.eq.${q}`)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (!error && data && data.length > 0) {
+          return data.map(normalizeOrder).filter((o) => !isFakeOrder(o));
+        }
+      } catch (err) {
+        console.warn('Supabase searchOrders error:', err);
+      }
+    }
+
     const all = await this.getAll();
-    const q = query.toLowerCase().trim();
+    const qLower = q.toLowerCase();
     return all.filter((o) => {
-      const matchNum = o.order_number.toLowerCase().includes(q);
-      const matchPhone = o.customer?.phone.toLowerCase().includes(q) || false;
-      const matchName = o.customer?.name.toLowerCase().includes(q) || false;
-      const matchTx = o.payment?.transaction_id?.toLowerCase().includes(q) || false;
+      const matchNum = o.order_number.toLowerCase().includes(qLower);
+      const matchPhone = o.customer?.phone?.toLowerCase().includes(qLower) || false;
+      const matchName = o.customer?.name?.toLowerCase().includes(qLower) || false;
+      const matchTx = o.payment?.transaction_id?.toLowerCase().includes(qLower) || false;
       return matchNum || matchPhone || matchName || matchTx;
     });
   }

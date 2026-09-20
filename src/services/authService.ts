@@ -27,24 +27,33 @@ export const authService = {
           return null;
         }
 
+        // Strictly verify user exists in admins table with role = 'admin'
+        const { data: adminRecord, error: adminErr } = await supabase
+          .from('admins')
+          .select('id, email, name, role')
+          .or(`auth_user_id.eq.${user.id},email.eq.${user.email}`)
+          .eq('role', 'admin')
+          .maybeSingle();
+
+        if (adminErr || !adminRecord) {
+          localStorage.removeItem(ADMIN_SESSION_KEY);
+          return null;
+        }
+
         return {
           id: user.id,
-          email: user.email || '',
+          email: adminRecord.email || user.email || '',
           role: 'admin',
-          name: user.user_metadata?.name || 'Administrator',
+          name: adminRecord.name || user.user_metadata?.name || 'Administrator',
         };
       } catch (err) {
         console.warn('Supabase auth session check failed:', err);
+        localStorage.removeItem(ADMIN_SESSION_KEY);
         return null;
       }
     }
 
-    try {
-      const stored = localStorage.getItem(ADMIN_SESSION_KEY);
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
+    return null;
   },
 
   async login(email: string, password: string): Promise<AdminUser> {
@@ -73,41 +82,34 @@ export const authService = {
       throw new Error('No user returned from Supabase authentication.');
     }
 
-    // Verify and link the user against the admins table
-    try {
-      const { data: adminRecord } = await supabase
-        .from('admins')
-        .select('*')
-        .or(`auth_user_id.eq.${data.user.id},email.eq.${data.user.email}`)
-        .maybeSingle();
+    // Strictly verify the user exists in the admins table with role = 'admin'
+    const { data: adminRecord, error: adminErr } = await supabase
+      .from('admins')
+      .select('*')
+      .or(`auth_user_id.eq.${data.user.id},email.eq.${data.user.email}`)
+      .eq('role', 'admin')
+      .maybeSingle();
 
-      if (adminRecord) {
-        if (!adminRecord.auth_user_id) {
-          await supabase
-            .from('admins')
-            .update({ auth_user_id: data.user.id })
-            .eq('id', adminRecord.id);
-        }
-      } else {
-        // Attempt to insert admin record if it doesn't exist yet
-        await supabase
-          .from('admins')
-          .insert([{
-            auth_user_id: data.user.id,
-            email: data.user.email,
-            name: data.user.user_metadata?.name || 'Administrator',
-            role: 'admin'
-          }]);
-      }
-    } catch (err) {
-      console.warn('Admin record link warning:', err);
+    if (adminErr || !adminRecord) {
+      // Reject login immediately and sign out from Supabase Auth
+      await supabase.auth.signOut();
+      localStorage.removeItem(ADMIN_SESSION_KEY);
+      throw new Error('Access denied. This account does not have administrator privileges.');
+    }
+
+    // Link auth_user_id if not linked yet
+    if (!adminRecord.auth_user_id) {
+      await supabase
+        .from('admins')
+        .update({ auth_user_id: data.user.id })
+        .eq('id', adminRecord.id);
     }
 
     const user: AdminUser = {
       id: data.user.id,
-      email: data.user.email || email.trim(),
+      email: adminRecord.email || data.user.email || email.trim(),
       role: 'admin',
-      name: data.user.user_metadata?.name || 'Administrator',
+      name: adminRecord.name || data.user.user_metadata?.name || 'Administrator',
     };
     localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(user));
     return user;

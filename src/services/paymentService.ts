@@ -72,26 +72,14 @@ export const paymentService = {
       const data = await res.json();
       return data;
     } catch (err: any) {
-      console.warn('Backend OCR analysis fetch error, generating local fallback:', err);
-      // Clean fallback if offline or network glitch
-      const isMatch = true;
+      console.warn('Backend OCR analysis unavailable:', err);
       return {
-        success: true,
-        detected_upi_id: params.expectedUpiId,
-        detected_transaction_id: `${Math.floor(400000000000 + Math.random() * 500000000000)}`,
-        detected_amount: params.expectedAmount,
-        detected_payment_status: 'SUCCESS',
-        ocr_confidence: 0.92,
-        upi_match: true,
-        amount_match: true,
-        transaction_match: true,
-        is_duplicate_transaction: false,
-        receiver_name: 'PRINTLAB 3D',
-        payment_date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-        payment_time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        screenshot_analysis_status: 'ANALYZED',
-        warnings: [],
-        isValidLooking: true,
+        success: false,
+        error: 'Automated verification was unable to extract receipt details. Please enter your 12-digit UPI reference (UTR) manually.',
+        screenshot_analysis_status: 'FAILED',
+        isValidLooking: false,
+        detected_payment_status: 'UNKNOWN',
+        warnings: ['Automated screenshot analysis unavailable. Manual verification required.'],
         expectedUpiId: params.expectedUpiId,
         expectedAmount: params.expectedAmount,
       };
@@ -99,36 +87,31 @@ export const paymentService = {
   },
 
   /**
-   * Check if a transaction ID is already used in another order
+   * Check if a transaction ID is already used in another order via backend
    */
   async checkDuplicateTransaction(transactionId: string, currentOrderId?: string): Promise<{ isDuplicate: boolean; orderNumber?: string }> {
     if (!transactionId || transactionId.trim().length < 6) {
       return { isDuplicate: false };
     }
 
-    const trimmed = transactionId.trim().toUpperCase();
-    const allOrders = await orderService.getAll();
-
-    const existingOrder = allOrders.find(
-      (o) =>
-        o.payment?.transaction_id?.toUpperCase() === trimmed &&
-        o.id !== currentOrderId &&
-        o.payment?.payment_status !== 'REJECTED'
-    );
-
-    if (existingOrder) {
-      return {
-        isDuplicate: true,
-        orderNumber: existingOrder.order_number,
-      };
+    try {
+      const res = await fetch('/api/payments/check-duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionId, orderId: currentOrderId }),
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('Check duplicate transaction endpoint error:', err);
     }
 
     return { isDuplicate: false };
   },
 
   async getByOrderId(orderId: string): Promise<Payment | null> {
-    const allOrders = await orderService.getAll();
-    const targetOrder = allOrders.find((o) => o.id === orderId || o.order_number === orderId);
+    const targetOrder = await orderService.getById(orderId);
     return targetOrder?.payment || null;
   },
 
@@ -175,8 +158,7 @@ export const paymentService = {
     const { orderId, amount, transactionId, screenshotUrl, upiId, analysis } = params;
 
     // Security Enforcement: Check session expiration
-    const allOrdersCheck = await orderService.getAll();
-    const targetOrderCheck = allOrdersCheck.find(o => o.id === orderId || o.order_number === orderId);
+    const targetOrderCheck = await orderService.getById(orderId);
     if (targetOrderCheck?.payment_session_expires_at) {
       const expiresAt = new Date(targetOrderCheck.payment_session_expires_at).getTime();
       if (Date.now() >= expiresAt) {
@@ -251,17 +233,9 @@ export const paymentService = {
       }).catch(() => {});
     }
 
-    // Update local orders
-    const allOrders = await orderService.getAll();
-    const targetOrder = allOrders.find(o => o.id === orderId || o.order_number === orderId);
-    if (targetOrder) {
-      targetOrder.payment = {
-        ...(targetOrder.payment || {}),
-        ...paymentData,
-      };
-      targetOrder.order_status = 'PENDING_PAYMENT_VERIFICATION';
-      targetOrder.updated_at = new Date().toISOString();
-      await orderService.updateStatus(targetOrder.id, 'PENDING_PAYMENT_VERIFICATION');
+    // Update order status to PENDING_PAYMENT_VERIFICATION
+    if (targetOrderCheck) {
+      await orderService.updateStatus(targetOrderCheck.id, 'PENDING_PAYMENT_VERIFICATION');
     }
 
     return paymentData;
@@ -293,24 +267,12 @@ export const paymentService = {
       }
     }
 
-    const allOrders = await orderService.getAll();
-    const targetOrder = allOrders.find(o => o.id === orderId);
-    if (targetOrder) {
-      if (targetOrder.payment) {
-        targetOrder.payment.payment_status = status;
-        targetOrder.payment.verified_by = adminId;
-        targetOrder.payment.verified_at = new Date().toISOString();
-        if (notes) targetOrder.payment.admin_notes = notes;
-      }
-
-      if (status === 'VERIFIED') {
-        await orderService.updateStatus(orderId, 'PAYMENT_VERIFIED');
-      } else if (status === 'REJECTED') {
-        await orderService.updateStatus(orderId, 'CANCELLED');
-      } else if (status === 'PENDING_REVIEW') {
-        // Keeps order in PENDING_PAYMENT_VERIFICATION
-        targetOrder.updated_at = new Date().toISOString();
-      }
+    if (status === 'VERIFIED') {
+      await orderService.updateStatus(orderId, 'PAYMENT_VERIFIED');
+    } else if (status === 'REJECTED') {
+      await orderService.updateStatus(orderId, 'CANCELLED');
+    } else if (status === 'PENDING_REVIEW') {
+      await orderService.updateStatus(orderId, 'PENDING_PAYMENT_VERIFICATION');
     }
   }
 };
