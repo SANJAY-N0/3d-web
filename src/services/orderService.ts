@@ -6,12 +6,10 @@ import { productService } from './productService';
 const ORDERS_STORAGE_KEY = 'printlab_orders_data_v1';
 
 const FAKE_ORDER_NUMBERS = new Set(['3DP-2026-00124', '3DP-2026-00125', '3DP-2026-00126']);
-const FAKE_CUSTOMER_NAMES = new Set(['sanjay kumar', 'priya sharma', 'aditya varma']);
 
 function isFakeOrder(o: any): boolean {
   if (!o) return true;
   if (o.order_number && FAKE_ORDER_NUMBERS.has(o.order_number.toUpperCase())) return true;
-  if (o.customer?.name && FAKE_CUSTOMER_NAMES.has(o.customer.name.trim().toLowerCase())) return true;
   if (o.product?.name && o.product.name.trim().toLowerCase() === 'nothing') return true;
   if (o.product_id === 'nothing' || o.id === 'nothing') return true;
   return false;
@@ -108,16 +106,23 @@ export const orderService = {
     // 2. Direct Supabase query fallback
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+        let query = supabase
           .from('orders')
           .select(`
             *,
             product:products(*),
             customer:customers(*),
             payment:payments(*)
-          `)
-          .or(`id.eq.${cleanId},order_number.eq.${cleanId}`)
-          .maybeSingle();
+          `);
+
+        if (isUUID) {
+          query = query.or(`id.eq.${cleanId},order_number.eq.${cleanId}`);
+        } else {
+          query = query.ilike('order_number', cleanId);
+        }
+
+        const { data, error } = await query.maybeSingle();
 
         if (!error && data && !isFakeOrder(data)) {
           return normalizeOrder(data);
@@ -419,21 +424,73 @@ export const orderService = {
     };
   },
 
+  async trackOrder(query: string): Promise<Order | null> {
+    const q = query.trim();
+    if (!q) return null;
+
+    try {
+      const res = await fetch(`/api/orders/track?query=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.order && !isFakeOrder(data.order)) {
+          const normalized = normalizeOrder(data.order);
+          // Keep local cache fresh
+          const current = getLocalOrders();
+          const idx = current.findIndex((o) => o.id === normalized.id || o.order_number === normalized.order_number);
+          if (idx !== -1) {
+            current[idx] = { ...current[idx], ...normalized };
+          } else {
+            current.unshift(normalized);
+          }
+          saveLocalOrders(current);
+          return normalized;
+        }
+      }
+    } catch (err) {
+      console.warn('Backend trackOrder error, falling back:', err);
+    }
+
+    // Fallback: search locally and Supabase
+    const results = await this.searchOrders(q);
+    return results.length > 0 ? results[0] : null;
+  },
+
   async searchOrders(query: string): Promise<Order[]> {
     const q = query.trim();
     if (!q) return [];
 
+    // Try server-side track endpoint first for high reliability & RLS bypass
+    try {
+      const res = await fetch(`/api/orders/track?query=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.order && !isFakeOrder(data.order)) {
+          return [normalizeOrder(data.order)];
+        }
+      }
+    } catch (err) {
+      console.warn('Backend track search error, falling back:', err);
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
+        let query = supabase
           .from('orders')
           .select(`
             *,
             product:products(*),
             customer:customers(*),
             payment:payments(*)
-          `)
-          .or(`order_number.ilike.%${q}%,id.eq.${q}`)
+          `);
+
+        if (isUUID) {
+          query = query.or(`order_number.ilike.%${q}%,id.eq.${q}`);
+        } else {
+          query = query.ilike('order_number', `%${q}%`);
+        }
+
+        const { data, error } = await query
           .order('created_at', { ascending: false })
           .limit(20);
 
@@ -447,9 +504,10 @@ export const orderService = {
 
     const all = await this.getAll();
     const qLower = q.toLowerCase();
+    const cleanDigits = q.replace(/\D/g, '');
     return all.filter((o) => {
       const matchNum = o.order_number.toLowerCase().includes(qLower);
-      const matchPhone = o.customer?.phone?.toLowerCase().includes(qLower) || false;
+      const matchPhone = cleanDigits.length >= 4 && (o.customer?.phone?.replace(/\D/g, '').includes(cleanDigits) || false);
       const matchName = o.customer?.name?.toLowerCase().includes(qLower) || false;
       const matchTx = o.payment?.transaction_id?.toLowerCase().includes(qLower) || false;
       return matchNum || matchPhone || matchName || matchTx;

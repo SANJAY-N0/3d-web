@@ -2,7 +2,6 @@ import { Customer } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const CURRENT_PROFILE_KEY = 'printlab_user_customer_profile';
-const FAKE_CUSTOMER_NAMES = new Set(['sanjay kumar', 'priya sharma', 'aditya varma']);
 
 // Clean up legacy all-customers cache if present
 if (typeof window !== 'undefined') {
@@ -15,7 +14,6 @@ if (typeof window !== 'undefined') {
 
 function isFakeCustomer(c: any): boolean {
   if (!c) return true;
-  if (c.name && FAKE_CUSTOMER_NAMES.has(c.name.trim().toLowerCase())) return true;
   if (c.email && (c.email.includes('test.com') || c.email.includes('example.com'))) return true;
   return false;
 }

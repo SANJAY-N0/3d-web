@@ -370,7 +370,7 @@ export const PaymentPage: React.FC = () => {
 
       // 3. Submit payment details
       setUploadStep('Confirming order payment...');
-      await paymentService.submitPaymentProof({
+      const submittedPayment = await paymentService.submitPaymentProof({
         orderId: order.id,
         amount: order.total_amount,
         transactionId: trimmedTx,
@@ -378,16 +378,21 @@ export const PaymentPage: React.FC = () => {
         upiId: getMerchantUPIConfig().upiId,
       });
 
-      // 4. Update order status to PENDING_PAYMENT_VERIFICATION
-      await orderService.updateStatus(order.id, 'PENDING_PAYMENT_VERIFICATION');
+      const updatedOrder: Order = {
+        ...order,
+        order_status: 'PAYMENT_PROCESSING',
+        payment: submittedPayment,
+        updated_at: new Date().toISOString(),
+      };
 
       showToast('Payment submitted successfully! Verification in progress.', 'success');
 
-      // 5. Navigate to Order Tracking
+      // 4. Navigate to Order Tracking
       navigate(`/track?order=${order.order_number}`, {
         state: {
           orderId: order.id,
           orderNumber: order.order_number,
+          order: updatedOrder,
         },
       });
     } catch (err: any) {

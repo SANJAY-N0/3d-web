@@ -93,6 +93,10 @@ function getGeminiClient(): GoogleGenAI | null {
 // In-memory registry to track submitted transaction IDs for duplicate detection
 const knownTransactionRegistry = new Map<string, { orderNumber: string; orderId: string; amount: number; date: string }>();
 
+function isUuid(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str).trim());
+}
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -315,16 +319,22 @@ async function startServer() {
       }
 
       // Fetch order with product, customer, and payment relations
-      const { data: orderData, error: orderError } = await supabaseServer
+      let orderQuery = supabaseServer
         .from("orders")
         .select(`
           *,
           product:products(*),
           customer:customers(*),
           payment:payments(*)
-        `)
-        .or(`id.eq.${cleanOrderId},order_number.eq.${cleanOrderId}`)
-        .maybeSingle();
+        `);
+
+      if (isUuid(cleanOrderId)) {
+        orderQuery = orderQuery.or(`id.eq.${cleanOrderId},order_number.eq.${cleanOrderId}`);
+      } else {
+        orderQuery = orderQuery.ilike("order_number", cleanOrderId);
+      }
+
+      const { data: orderData, error: orderError } = await orderQuery.maybeSingle();
 
       if (orderError) {
         console.error("Payment page backend error:", orderError);
@@ -395,6 +405,265 @@ async function startServer() {
   });
 
   /**
+   * Dedicated endpoint to submit customer payment proof (UTR / screenshot)
+   * Connects payment directly to existing orders.id without creating duplicate orders
+   */
+  app.post("/api/payments/submit", async (req, res) => {
+    try {
+      const { orderId, amount, transactionId, screenshotUrl, upiId } = req.body;
+
+      if (!orderId || String(orderId).trim() === "") {
+        return res.status(400).json({ success: false, error: "Order ID is required." });
+      }
+
+      const cleanOrderId = String(orderId).trim();
+      const cleanTx = transactionId ? String(transactionId).trim().toUpperCase() : undefined;
+
+      console.log("Payment submission for order:", cleanOrderId, "UTR:", cleanTx);
+
+      if (!supabaseServer) {
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      // 1. Find the existing order in Supabase
+      let orderFindQuery = supabaseServer
+        .from("orders")
+        .select("id, order_number, total_amount, order_status, payment_session_expires_at");
+
+      if (isUuid(cleanOrderId)) {
+        orderFindQuery = orderFindQuery.or(`id.eq.${cleanOrderId},order_number.eq.${cleanOrderId}`);
+      } else {
+        orderFindQuery = orderFindQuery.ilike("order_number", cleanOrderId);
+      }
+
+      const { data: existingOrder, error: orderFindErr } = await orderFindQuery.maybeSingle();
+
+      if (orderFindErr) {
+        console.error("Payment submit order lookup error:", orderFindErr);
+        return res.status(500).json({ success: false, error: "Database error looking up order." });
+      }
+
+      if (!existingOrder) {
+        return res.status(404).json({
+          success: false,
+          error: "Order not found. Payment can only be submitted for an existing order.",
+        });
+      }
+
+      // 2. Check 10-minute session expiration
+      if (existingOrder.payment_session_expires_at) {
+        const expiresAtTime = new Date(existingOrder.payment_session_expires_at).getTime();
+        if (
+          Date.now() >= expiresAtTime &&
+          (existingOrder.order_status === "PENDING_PAYMENT" || existingOrder.order_status === "ORDER_PLACED")
+        ) {
+          await supabaseServer
+            .from("orders")
+            .update({ order_status: "PAYMENT_EXPIRED", updated_at: new Date().toISOString() })
+            .eq("id", existingOrder.id);
+
+          return res.status(400).json({
+            success: false,
+            expired: true,
+            error: "Payment session has expired. This order has been cancelled.",
+          });
+        }
+      }
+
+      // 3. Create or update payments record linked to existing orders.id
+      const paymentPayload: Record<string, any> = {
+        order_id: existingOrder.id,
+        amount: Number(amount) || Number(existingOrder.total_amount) || 0,
+        transaction_id: cleanTx,
+        screenshot_url: screenshotUrl || null,
+        upi_id: upiId || null,
+        payment_status: "PENDING",
+        updated_at: new Date().toISOString(),
+      };
+
+      // Check if a payment row already exists for this order
+      const { data: existingPayment } = await supabaseServer
+        .from("payments")
+        .select("id")
+        .eq("order_id", existingOrder.id)
+        .maybeSingle();
+
+      let paymentRecordId = existingPayment?.id;
+
+      if (existingPayment) {
+        const { error: paymentUpdateErr } = await supabaseServer
+          .from("payments")
+          .update(paymentPayload)
+          .eq("id", existingPayment.id);
+
+        if (paymentUpdateErr) {
+          console.error("Payment update error:", paymentUpdateErr);
+          return res.status(500).json({ success: false, error: "Failed to update payment record." });
+        }
+      } else {
+        const { data: newPayment, error: paymentInsertErr } = await supabaseServer
+          .from("payments")
+          .insert([paymentPayload])
+          .select("id")
+          .single();
+
+        if (paymentInsertErr) {
+          console.error("Payment insert error:", paymentInsertErr);
+          return res.status(500).json({ success: false, error: "Failed to create payment record." });
+        }
+        paymentRecordId = newPayment?.id;
+      }
+
+      // 4. Update order status to PAYMENT_PROCESSING
+      const { error: orderStatusErr } = await supabaseServer
+        .from("orders")
+        .update({
+          order_status: "PAYMENT_PROCESSING",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingOrder.id);
+
+      if (orderStatusErr) {
+        console.error("Order status update error:", orderStatusErr);
+      }
+
+      // 5. Register in-memory transaction registry if UTR provided
+      if (cleanTx) {
+        knownTransactionRegistry.set(cleanTx, {
+          orderNumber: existingOrder.order_number,
+          orderId: existingOrder.id,
+          amount: Number(amount) || Number(existingOrder.total_amount) || 0,
+          date: new Date().toISOString(),
+        });
+      }
+
+      console.log("Payment successfully submitted for order:", existingOrder.order_number, "order_status: PAYMENT_PROCESSING");
+
+      // 6. Return exact response format required
+      return res.json({
+        success: true,
+        order: {
+          id: existingOrder.id,
+          order_number: existingOrder.order_number,
+          order_status: "PAYMENT_PROCESSING",
+          total_amount: existingOrder.total_amount,
+        },
+        payment: {
+          id: paymentRecordId,
+          payment_status: "PENDING",
+          transaction_id: cleanTx,
+        },
+      });
+    } catch (err: any) {
+      console.error("API POST /api/payments/submit error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Internal server error." });
+    }
+  });
+
+  /**
+   * Dedicated endpoint for Track Order page
+   * Allows searching by Order Number (e.g. 3DP-2026-65602) or 10-digit Phone Number
+   */
+  app.get("/api/orders/track", async (req, res) => {
+    try {
+      const queryParam = String(req.query.query || req.query.order || "").trim();
+      if (!queryParam) {
+        return res.status(400).json({ success: false, error: "Order number or phone number is required." });
+      }
+
+      if (!supabaseServer) {
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      const cleanDigits = queryParam.replace(/\D/g, "");
+      const isPhone = cleanDigits.length === 10;
+      const normalizedOrderNum = queryParam.toUpperCase();
+
+      console.log("Track Order API search query:", queryParam, "isPhone:", isPhone);
+
+      let orderData: any = null;
+
+      if (isPhone) {
+        // Search by phone number in customers table (exact 10 digits or matching)
+        const { data: customerRecords } = await supabaseServer
+          .from("customers")
+          .select("id")
+          .or(`phone.eq.${cleanDigits},phone.ilike.%${cleanDigits}%`)
+          .limit(10);
+
+        if (customerRecords && customerRecords.length > 0) {
+          const customerIds = customerRecords.map((c: any) => c.id);
+          const { data: foundOrders } = await supabaseServer
+            .from("orders")
+            .select(`
+              *,
+              product:products(*),
+              customer:customers(*),
+              payment:payments(*)
+            `)
+            .in("customer_id", customerIds)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          if (foundOrders && foundOrders.length > 0) {
+            orderData = foundOrders[0];
+          }
+        }
+      }
+
+      if (!orderData) {
+        // Search by order_number or id
+        let trackQuery = supabaseServer
+          .from("orders")
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*),
+            payment:payments(*)
+          `);
+
+        if (isUuid(queryParam)) {
+          trackQuery = trackQuery.or(`order_number.ilike.%${normalizedOrderNum}%,id.eq.${queryParam}`);
+        } else {
+          trackQuery = trackQuery.ilike("order_number", `%${normalizedOrderNum}%`);
+        }
+
+        const { data: foundOrders, error: findErr } = await trackQuery
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (!findErr && foundOrders && foundOrders.length > 0) {
+          orderData = foundOrders[0];
+        }
+      }
+
+      if (!orderData) {
+        return res.status(404).json({
+          success: false,
+          error: "No matching order found. Please check the order number or phone.",
+        });
+      }
+
+      const paymentData = Array.isArray(orderData.payment) ? orderData.payment[0] || null : orderData.payment;
+      const normalizedOrder = {
+        ...orderData,
+        payment: paymentData,
+      };
+
+      console.log("Track Order API found order:", normalizedOrder.order_number, "status:", normalizedOrder.order_status);
+
+      return res.json({
+        success: true,
+        order: normalizedOrder,
+        payment: paymentData,
+      });
+    } catch (err: any) {
+      console.error("API GET /api/orders/track error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Internal server error." });
+    }
+  });
+
+  /**
    * Backend Payment Session Verification Endpoint
    * Enforces 10-minute window before accepting any payment actions
    * Validates directly against database if orderId is provided
@@ -406,11 +675,18 @@ async function startServer() {
       let orderStatus: string | null = null;
 
       if (orderId && supabaseServer) {
-        const { data: orderData } = await supabaseServer
+        const cleanId = String(orderId).trim();
+        let sessionQuery = supabaseServer
           .from("orders")
-          .select("payment_session_expires_at, order_status")
-          .or(`id.eq.${orderId},order_number.eq.${orderId}`)
-          .maybeSingle();
+          .select("payment_session_expires_at, order_status");
+
+        if (isUuid(cleanId)) {
+          sessionQuery = sessionQuery.or(`id.eq.${cleanId},order_number.eq.${cleanId}`);
+        } else {
+          sessionQuery = sessionQuery.ilike("order_number", cleanId);
+        }
+
+        const { data: orderData } = await sessionQuery.maybeSingle();
 
         if (orderData) {
           orderStatus = orderData.order_status;
@@ -438,10 +714,18 @@ async function startServer() {
       const isExpired = Date.now() >= expiryTime;
       if (isExpired) {
         if (orderId && supabaseServer && orderStatus === "PENDING_PAYMENT") {
-          await supabaseServer
+          const cleanId = String(orderId).trim();
+          let cancelQuery = supabaseServer
             .from("orders")
-            .update({ order_status: "PAYMENT_EXPIRED" })
-            .or(`id.eq.${orderId},order_number.eq.${orderId}`);
+            .update({ order_status: "PAYMENT_EXPIRED" });
+
+          if (isUuid(cleanId)) {
+            cancelQuery = cancelQuery.or(`id.eq.${cleanId},order_number.eq.${cleanId}`);
+          } else {
+            cancelQuery = cancelQuery.ilike("order_number", cleanId);
+          }
+
+          await cancelQuery;
         }
         return res.status(400).json({
           valid: false,

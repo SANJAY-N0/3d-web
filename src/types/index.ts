@@ -1,6 +1,7 @@
 export type OrderStatus =
   // Modern 6-stage tracker
   | 'ORDER_PLACED'
+  | 'PAYMENT_PROCESSING'
   | 'PAYMENT_CONFIRMED'
   | 'ORDER_PROCESSING'
   | 'PRODUCT_READY'
@@ -8,6 +9,7 @@ export type OrderStatus =
   | 'DELIVERED'
   | 'CANCELLED'
   | 'PAYMENT_EXPIRED'
+  | 'PAYMENT_FAILED'
   // Legacy backward-compatibility aliases
   | 'PENDING_PAYMENT'
   | 'PENDING_PAYMENT_VERIFICATION'
@@ -21,6 +23,7 @@ export type PaymentStatus =
   | 'SUBMITTED'
   | 'VERIFIED'
   | 'REJECTED'
+  | 'FAILED'
   | 'PENDING_REVIEW';
 
 export type ScreenshotAnalysisStatus =
