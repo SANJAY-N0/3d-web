@@ -253,7 +253,12 @@ export const OrderPage: React.FC = () => {
         const valRes = await fetch('/api/orders/validate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(customerForm),
+          body: JSON.stringify({
+            ...customerForm,
+            quantity,
+            unit_price: unitPrice,
+            total_amount: totalAmount,
+          }),
         });
         const valData = await valRes.json();
         if (!valRes.ok || !valData.valid) {
@@ -276,6 +281,7 @@ export const OrderPage: React.FC = () => {
 
       // 4. Create or update customer record
       const customerPayload = {
+        auth_user_id: loggedInCustomer?.id || loggedInCustomer?.auth_user_id || undefined,
         name: customerForm.name,
         phone: customerForm.phone,
         email: customerForm.email,

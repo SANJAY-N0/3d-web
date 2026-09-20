@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { DEFAULT_UPI_ID, DEFAULT_BUSINESS_NAME } from '../../lib/upiUtils';
 import { DEFAULT_CLOUDINARY_CLOUD_NAME, getCloudinaryCloudName, getCloudinaryDefaultFolder } from '../../lib/cloudinary';
 import { DEFAULT_SUPPORT_CONFIG, getSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
 import { resetAllStorageToSeed } from '../../services/productService';
+import { settingsService } from '../../services/settingsService';
 import {
   Settings,
   QrCode,
@@ -63,6 +64,25 @@ export const AdminSettings: React.FC = () => {
     () => getCloudinaryDefaultFolder()
   );
 
+  // Load latest settings from Supabase on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const allSettings = await settingsService.getAll();
+        if (allSettings.merchant_upi_id) setUpiId(allSettings.merchant_upi_id);
+        if (allSettings.merchant_name) setMerchantName(allSettings.merchant_name);
+        if (allSettings.support_phone) setSupportPhone(allSettings.support_phone);
+        if (allSettings.support_whatsapp) setSupportWhatsapp(allSettings.support_whatsapp);
+        if (allSettings.support_alt_phone !== undefined) setSupportAltPhone(allSettings.support_alt_phone);
+        if (allSettings.cloudinary_cloud_name) setCloudName(allSettings.cloudinary_cloud_name);
+        if (allSettings.cloudinary_folder) setUploadFolder(allSettings.cloudinary_folder);
+      } catch (err) {
+        console.warn('Failed to load settings from Supabase:', err);
+      }
+    };
+    loadSettings();
+  }, []);
+
   // Supabase Safe Public Configuration
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://xyzcompany.supabase.co';
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -70,18 +90,18 @@ export const AdminSettings: React.FC = () => {
     ? `${supabaseAnonKey.substring(0, 12)}...${supabaseAnonKey.substring(supabaseAnonKey.length - 8)}`
     : 'Not configured';
 
-  const handleSaveUPI = (e: React.FormEvent) => {
+  const handleSaveUPI = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!upiId.trim()) {
       showToast('UPI ID cannot be empty.', 'error');
       return;
     }
-    localStorage.setItem('printlab_merchant_upi_id', upiId.trim());
-    localStorage.setItem('printlab_merchant_name', merchantName.trim());
-    showToast('Merchant UPI configuration saved! Customer checkout updated.', 'success');
+    await settingsService.set('merchant_upi_id', upiId.trim(), 'Merchant UPI ID for customer QR code and payment intent generation');
+    await settingsService.set('merchant_name', merchantName.trim(), 'Merchant Payee Display Name shown during UPI checkout');
+    showToast('Merchant UPI configuration saved to database! Customer checkout updated.', 'success');
   };
 
-  const handleSaveSupport = (e: React.FormEvent) => {
+  const handleSaveSupport = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supportPhone.trim()) {
       showToast('Primary mobile number cannot be empty.', 'error');
@@ -91,27 +111,23 @@ export const AdminSettings: React.FC = () => {
       showToast('WhatsApp number cannot be empty.', 'error');
       return;
     }
-    localStorage.setItem('printlab_support_phone', supportPhone.trim());
-    localStorage.setItem('printlab_support_whatsapp', supportWhatsapp.trim());
-    if (supportAltPhone.trim()) {
-      localStorage.setItem('printlab_support_alt_phone', supportAltPhone.trim());
-    } else {
-      localStorage.removeItem('printlab_support_alt_phone');
-    }
-    showToast('Support contact details updated successfully across the website!', 'success');
+    await settingsService.set('support_phone', supportPhone.trim(), 'Primary customer support phone number');
+    await settingsService.set('support_whatsapp', supportWhatsapp.trim(), 'Customer care WhatsApp contact number');
+    await settingsService.set('support_alt_phone', supportAltPhone.trim(), 'Alternative customer support phone number');
+    showToast('Support contact details updated successfully in database!', 'success');
   };
 
-  const handleSaveCloudinary = (e: React.FormEvent) => {
+  const handleSaveCloudinary = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cloudName.trim()) {
       showToast('Cloudinary Cloud Name cannot be empty.', 'error');
       return;
     }
-    localStorage.setItem('printlab_cloudinary_cloud_name', cloudName.trim());
+    await settingsService.set('cloudinary_cloud_name', cloudName.trim(), 'Cloudinary cloud name for product media assets');
+    await settingsService.set('cloudinary_folder', uploadFolder.trim() || '3d-printing/products', 'Cloudinary root upload folder');
     localStorage.setItem('printlab_cloudinary_api_key', cloudinaryApiKey.trim());
     localStorage.setItem('printlab_cloudinary_api_secret', cloudinaryApiSecret.trim());
-    localStorage.setItem('printlab_cloudinary_folder', uploadFolder.trim() || '3d-printing/products');
-    showToast('Cloudinary media settings saved successfully!', 'success');
+    showToast('Cloudinary media settings saved successfully to database!', 'success');
   };
 
   const handleResetData = () => {

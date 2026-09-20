@@ -27,17 +27,54 @@ export const customerService = {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('customers').insert([customerData]).select().single();
-        if (error) throw error;
-        if (data) return data as Customer;
+        // Check if customer already exists by phone or email
+        let query = supabase.from('customers').select('*');
+        if (customerData.phone && customerData.email) {
+          query = query.or(`phone.eq.${customerData.phone},email.eq.${customerData.email}`);
+        } else if (customerData.phone) {
+          query = query.eq('phone', customerData.phone);
+        } else if (customerData.email) {
+          query = query.eq('email', customerData.email);
+        }
+
+        const { data: existing, error: searchError } = await query.maybeSingle();
+        if (searchError) throw searchError;
+
+        if (existing) {
+          // Update existing customer record in Supabase
+          const { data: updated, error: updateError } = await supabase
+            .from('customers')
+            .update({
+              ...customerData,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id)
+            .select()
+            .single();
+
+          if (updateError) throw updateError;
+          if (updated) return updated as Customer;
+        } else {
+          // Insert new customer record in Supabase
+          const { data: created, error: insertError } = await supabase
+            .from('customers')
+            .insert([customerData])
+            .select()
+            .single();
+
+          if (insertError) throw insertError;
+          if (created) return created as Customer;
+        }
       } catch (err) {
-        console.warn('Supabase customer insert error, saving locally:', err);
+        console.warn('Supabase customer createOrUpdate error, saving locally:', err);
       }
     }
 
     const current = getLocalCustomers();
-    // check if phone already exists
-    const existingIndex = current.findIndex(c => c.phone === customerData.phone);
+    // check if phone or email already exists locally
+    const existingIndex = current.findIndex(
+      c => c.phone === customerData.phone || (customerData.email && c.email === customerData.email)
+    );
     if (existingIndex !== -1) {
       const updated = {
         ...current[existingIndex],

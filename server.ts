@@ -151,6 +151,9 @@ async function startServer() {
         city,
         state,
         pincode,
+        quantity,
+        unit_price,
+        total_amount,
       } = req.body;
 
       const errors: Record<string, string> = {};
@@ -207,6 +210,14 @@ async function startServer() {
         }
       } else {
         errors.delivery_method = "Invalid delivery method specified.";
+      }
+
+      // Price calculation integrity validation
+      if (unit_price !== undefined && quantity !== undefined && total_amount !== undefined) {
+        const expectedTotal = Number(unit_price) * Number(quantity);
+        if (Math.abs(Number(total_amount) - expectedTotal) > 0.01) {
+          errors.total_amount = `Invalid order total calculation. Expected ₹${expectedTotal}, got ₹${total_amount}.`;
+        }
       }
 
       if (Object.keys(errors).length > 0) {

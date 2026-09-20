@@ -38,7 +38,13 @@ export const orderService = {
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        if (data && data.length > 0) return data as Order[];
+        if (data && data.length > 0) {
+          const normalized = data.map((o: any) => ({
+            ...o,
+            payment: Array.isArray(o.payment) ? o.payment[0] || null : o.payment,
+          }));
+          return normalized as Order[];
+        }
       } catch (err) {
         console.warn('Supabase orders fetch error, falling back to local:', err);
       }
@@ -61,7 +67,13 @@ export const orderService = {
           .maybeSingle();
 
         if (error) throw error;
-        if (data) return data as Order;
+        if (data) {
+          const normalized = {
+            ...data,
+            payment: Array.isArray((data as any).payment) ? (data as any).payment[0] || null : (data as any).payment,
+          };
+          return normalized as Order;
+        }
       } catch (err) {
         console.warn('Supabase single order fetch failed:', err);
       }
@@ -91,6 +103,9 @@ export const orderService = {
     // 10-minute payment session window
     const sessionExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
+    // Price calculation integrity enforcement: total_amount = unit_price * quantity
+    const validatedTotal = Number(orderPayload.unit_price) * Number(orderPayload.quantity);
+
     const newOrder: Order = {
       id: 'ord-' + Date.now(),
       order_number: orderNumber,
@@ -98,7 +113,7 @@ export const orderService = {
       product_id: orderPayload.product_id,
       quantity: orderPayload.quantity,
       unit_price: orderPayload.unit_price,
-      total_amount: orderPayload.total_amount,
+      total_amount: validatedTotal,
       customization: orderPayload.customization,
       order_status: 'PENDING_PAYMENT',
       payment_session_created_at: sessionCreatedAt,
@@ -110,7 +125,7 @@ export const orderService = {
       payment: {
         id: 'pay-' + Date.now(),
         order_id: 'ord-' + Date.now(),
-        amount: orderPayload.total_amount,
+        amount: validatedTotal,
         payment_status: 'PENDING',
         created_at: sessionCreatedAt,
         updated_at: sessionCreatedAt,
@@ -127,7 +142,7 @@ export const orderService = {
             product_id: orderPayload.product_id,
             quantity: orderPayload.quantity,
             unit_price: orderPayload.unit_price,
-            total_amount: orderPayload.total_amount,
+            total_amount: validatedTotal,
             customization: orderPayload.customization,
             order_status: 'PENDING_PAYMENT',
             payment_session_created_at: sessionCreatedAt,
@@ -140,10 +155,10 @@ export const orderService = {
         if (data) {
           newOrder.id = data.id;
           newOrder.order_number = data.order_number;
-          // also initialize payment row
+          // also initialize payment row in Supabase
           await supabase.from('payments').insert([{
             order_id: data.id,
-            amount: orderPayload.total_amount,
+            amount: validatedTotal,
             payment_status: 'PENDING',
           }]);
         }
