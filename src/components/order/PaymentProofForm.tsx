@@ -181,20 +181,24 @@ export const PaymentProofForm: React.FC<PaymentProofFormProps> = ({
 
         {!screenshotPreview ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="flex flex-col sm:flex-row items-center gap-2.5">
               <button
                 type="button"
                 onClick={() => fileUploadRef.current?.click()}
-                className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-neutral-200 text-xs font-semibold flex items-center justify-center gap-2 border border-slate-300 dark:border-neutral-700 transition-colors cursor-pointer"
+                className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-neutral-200 text-xs font-semibold flex items-center justify-center gap-2 border border-slate-300 dark:border-neutral-700 transition-colors cursor-pointer"
               >
                 <Upload className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                 <span>Upload Screenshot</span>
               </button>
 
+              <span className="text-xs font-medium text-slate-400 dark:text-neutral-500 font-mono lowercase">
+                or
+              </span>
+
               <button
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
-                className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-neutral-200 text-xs font-semibold flex items-center justify-center gap-2 border border-slate-300 dark:border-neutral-700 transition-colors cursor-pointer"
+                className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-neutral-200 text-xs font-semibold flex items-center justify-center gap-2 border border-slate-300 dark:border-neutral-700 transition-colors cursor-pointer"
               >
                 <Camera className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                 <span>Take Photo</span>
