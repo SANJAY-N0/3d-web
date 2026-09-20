@@ -119,7 +119,7 @@ async function startServer() {
     res.json({
       status: "ok",
       timestamp: new Date().toISOString(),
-      hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+      hasVisionEngine: Boolean(process.env.GEMINI_API_KEY),
       hasCloudinary: isCloudinaryConfigured(),
       hasSupabase: Boolean(supabaseServer),
     });
@@ -1050,8 +1050,8 @@ async function startServer() {
   });
 
   /**
-   * AI OCR Endpoint for UPI Payment Proof Screenshot
-   * Analyzes screenshot using Gemini API / OCR & image understanding
+   * Screenshot Verification Endpoint for UPI Payment Proof
+   * Analyzes screenshot using image verification & OCR
    */
   app.post("/api/analyze-payment-proof", async (req, res) => {
     try {
@@ -1171,7 +1171,7 @@ Extract the following exact payment details with high precision:
           if (parsed.paymentDate) paymentDate = parsed.paymentDate;
           if (parsed.paymentTime) paymentTime = parsed.paymentTime;
         } catch (aiErr) {
-          console.warn("Gemini vision analysis error:", aiErr);
+          console.warn("Vision analysis error:", aiErr);
         }
       }
 
@@ -1285,12 +1285,12 @@ Extract the following exact payment details with high precision:
         expectedAmount: expectedNum,
       });
     } catch (error: any) {
-      console.error("Payment proof OCR analysis error:", error);
+      console.error("Payment proof analysis error:", error);
       res.status(500).json({
         success: false,
         error: error.message || "Failed to analyze payment proof screenshot",
         analysisStatus: "FAILED",
-        warnings: ["AI OCR processing failed. You can still enter your Transaction ID manually."],
+        warnings: ["Verification scan unavailable. You can still enter your Transaction ID manually."],
       });
     }
   });

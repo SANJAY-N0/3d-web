@@ -68,7 +68,7 @@ export const PaymentVerification: React.FC = () => {
   }) => {
     setIsSubmitting(true);
     try {
-      // 1. Submit payment proof with AI OCR analysis
+      // 1. Submit payment proof for verification
       await paymentService.submitProof({
         orderId: order.id,
         amount: order.total_amount,

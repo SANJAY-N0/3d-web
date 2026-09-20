@@ -140,7 +140,7 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                 <div>
                   <h4 className="font-semibold text-cyan-200">Payment Verification Required</h4>
                   <p className="text-neutral-400 text-[11px]">
-                    Compare the AI OCR extracted fields with the customer screenshot and your bank record before approving.
+                    Compare the extracted screenshot details with the customer upload and your bank record before approving.
                   </p>
                 </div>
               </div>
@@ -248,18 +248,18 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
             </div>
           )}
 
-          {/* AI PAYMENT PROOF OCR INSPECTION SECTION (Section 62 & 63) */}
+          {/* PAYMENT PROOF VERIFICATION INSPECTOR SECTION */}
           <div className="bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl p-4 sm:p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-neutral-800 pb-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                 <h3 className="font-mono text-xs uppercase tracking-wider text-slate-900 dark:text-white font-bold">
-                  AI Payment OCR & Verification Inspector
+                  Payment Proof Verification Inspector
                 </h3>
               </div>
               {hasOcr && (
                 <span className="px-2 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/30 text-[10px] font-mono">
-                  OCR Confidence: {Math.round((payment?.ocr_confidence || 0.9) * 100)}%
+                  Match Confidence: {Math.round((payment?.ocr_confidence || 0.9) * 100)}%
                 </span>
               )}
             </div>

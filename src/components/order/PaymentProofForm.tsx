@@ -76,7 +76,7 @@ export const PaymentProofForm: React.FC<PaymentProofFormProps> = ({
       const base64Data = reader.result as string;
       setScreenshotPreview(base64Data);
 
-      // Trigger AI OCR Scan (for background verification only, do NOT autofill transactionId)
+      // Trigger background verification scan (for validation only, do NOT autofill transactionId)
       setIsScanning(true);
       try {
         const analysis = await paymentService.analyzeScreenshot({
@@ -92,7 +92,7 @@ export const PaymentProofForm: React.FC<PaymentProofFormProps> = ({
         // Note: Automatic UTR autofill is intentionally REMOVED as per TASK 12.
         // Customer enters their transaction ID manually.
       } catch (err: any) {
-        console.warn('OCR Scan finished with fallback:', err);
+        console.warn('Verification scan finished with fallback:', err);
       } finally {
         setIsScanning(false);
       }
