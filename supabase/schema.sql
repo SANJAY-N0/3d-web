@@ -126,11 +126,23 @@ CREATE TABLE IF NOT EXISTS payments (
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS admins (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
   name TEXT,
   role TEXT NOT NULL DEFAULT 'admin',
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Safe migration to ensure auth_user_id exists if table was created previously without it
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'admins' AND column_name = 'auth_user_id'
+  ) THEN
+    ALTER TABLE admins ADD COLUMN auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 -- ==========================================================
 -- 6. SETTINGS TABLE
@@ -158,6 +170,8 @@ CREATE INDEX IF NOT EXISTS idx_orders_expires_at ON orders(payment_session_expir
 CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_transaction_id ON payments(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(payment_status);
+CREATE INDEX IF NOT EXISTS idx_admins_email ON admins(email);
+CREATE INDEX IF NOT EXISTS idx_admins_auth_user_id ON admins(auth_user_id);
 
 -- ==========================================================
 -- 8. ROW LEVEL SECURITY (RLS) POLICIES
@@ -169,38 +183,74 @@ ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 
--- Helper function: Check if current user is an admin
+-- Helper function: Check if current authenticated user is a verified administrator
 CREATE OR REPLACE FUNCTION is_admin() 
 RETURNS BOOLEAN AS $$
 BEGIN
-  RETURN (
-    EXISTS (
-      SELECT 1 FROM admins 
-      WHERE admins.email = auth.jwt() ->> 'email'
-    ) 
-    OR (auth.jwt() ->> 'role' = 'admin')
-    OR (auth.jwt() -> 'app_metadata' ->> 'role' = 'admin')
+  RETURN EXISTS (
+    SELECT 1 FROM admins 
+    WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+    AND admins.role = 'admin'
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 8.1 PRODUCTS POLICIES
--- Everyone can read products catalog
+-- Public and all customers can read the products catalog
+DROP POLICY IF EXISTS "Public products are viewable by everyone" ON products;
 CREATE POLICY "Public products are viewable by everyone" 
-  ON products FOR SELECT USING (true);
+  ON products FOR SELECT 
+  USING (true);
 
--- Only authenticated admins can modify products
+-- Only verified authenticated admins can insert products
+DROP POLICY IF EXISTS "Admins can insert products" ON products;
 CREATE POLICY "Admins can insert products" 
-  ON products FOR INSERT WITH CHECK (is_admin() OR auth.role() = 'authenticated');
+  ON products FOR INSERT 
+  TO authenticated 
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM admins 
+      WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+      AND admins.role = 'admin'
+    )
+  );
 
+-- Only verified authenticated admins can update products
+DROP POLICY IF EXISTS "Admins can update products" ON products;
 CREATE POLICY "Admins can update products" 
-  ON products FOR UPDATE USING (is_admin() OR auth.role() = 'authenticated');
+  ON products FOR UPDATE 
+  TO authenticated 
+  USING (
+    EXISTS (
+      SELECT 1 FROM admins 
+      WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+      AND admins.role = 'admin'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM admins 
+      WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+      AND admins.role = 'admin'
+    )
+  );
 
+-- Only verified authenticated admins can delete products
+DROP POLICY IF EXISTS "Admins can delete products" ON products;
 CREATE POLICY "Admins can delete products" 
-  ON products FOR DELETE USING (is_admin() OR auth.role() = 'authenticated');
+  ON products FOR DELETE 
+  TO authenticated 
+  USING (
+    EXISTS (
+      SELECT 1 FROM admins 
+      WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+      AND admins.role = 'admin'
+    )
+  );
 
 -- 8.2 CUSTOMERS POLICIES
 -- Anyone can create a customer profile during registration or checkout
+DROP POLICY IF EXISTS "Public can register customer profile" ON customers;
 CREATE POLICY "Public can register customer profile" 
   ON customers FOR INSERT WITH CHECK (true);
 
@@ -269,9 +319,18 @@ CREATE POLICY "Admins can manage settings"
   USING (is_admin() OR auth.role() = 'authenticated');
 
 -- 8.6 ADMINS POLICIES
--- Only authenticated users can view admins table
+DROP POLICY IF EXISTS "Admins viewable by authenticated users" ON admins;
 CREATE POLICY "Admins viewable by authenticated users" 
-  ON admins FOR SELECT USING (auth.role() = 'authenticated' OR is_admin());
+  ON admins FOR SELECT 
+  TO authenticated 
+  USING (auth.uid() = auth_user_id OR email = auth.jwt() ->> 'email' OR is_admin());
+
+DROP POLICY IF EXISTS "Admins can update own record" ON admins;
+CREATE POLICY "Admins can update own record" 
+  ON admins FOR UPDATE 
+  TO authenticated 
+  USING (auth.uid() = auth_user_id OR email = auth.jwt() ->> 'email')
+  WITH CHECK (auth.uid() = auth_user_id OR email = auth.jwt() ->> 'email');
 
 -- ==========================================================
 -- 9. STORAGE BUCKETS CONFIGURATION (Supabase Storage)

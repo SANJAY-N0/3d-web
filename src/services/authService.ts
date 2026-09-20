@@ -15,17 +15,27 @@ export const authService = {
   async getCurrentAdmin(): Promise<AdminUser | null> {
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          return {
-            id: session.user.id,
-            email: session.user.email || '',
-            role: 'admin',
-            name: session.user.user_metadata?.name || 'Administrator',
-          };
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session?.user) {
+          localStorage.removeItem(ADMIN_SESSION_KEY);
+          return null;
         }
+
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          localStorage.removeItem(ADMIN_SESSION_KEY);
+          return null;
+        }
+
+        return {
+          id: user.id,
+          email: user.email || '',
+          role: 'admin',
+          name: user.user_metadata?.name || 'Administrator',
+        };
       } catch (err) {
         console.warn('Supabase auth session check failed:', err);
+        return null;
       }
     }
 
@@ -46,38 +56,61 @@ export const authService = {
       throw new Error('Please provide both email and password.');
     }
 
-    if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-
-      if (error) throw new Error(error.message);
-
-      const user: AdminUser = {
-        id: data.user.id,
-        email: data.user.email || email.trim(),
-        role: 'admin',
-        name: data.user.user_metadata?.name || 'Administrator',
-      };
-      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(user));
-      return user;
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase is not configured. Please check your environment variables.');
     }
 
-    // Local fallback for standalone environments
-    const normalizedEmail = email.trim().toLowerCase();
-    if (normalizedEmail.includes('@') && password.length >= 6) {
-      const user: AdminUser = {
-        id: 'admin-' + Date.now(),
-        email: normalizedEmail,
-        role: 'admin',
-        name: 'Administrator',
-      };
-      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(user));
-      return user;
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    if (error) {
+      throw new Error(error.message);
     }
 
-    throw new Error('Invalid administrator credentials.');
+    if (!data?.user) {
+      throw new Error('No user returned from Supabase authentication.');
+    }
+
+    // Verify and link the user against the admins table
+    try {
+      const { data: adminRecord } = await supabase
+        .from('admins')
+        .select('*')
+        .or(`auth_user_id.eq.${data.user.id},email.eq.${data.user.email}`)
+        .maybeSingle();
+
+      if (adminRecord) {
+        if (!adminRecord.auth_user_id) {
+          await supabase
+            .from('admins')
+            .update({ auth_user_id: data.user.id })
+            .eq('id', adminRecord.id);
+        }
+      } else {
+        // Attempt to insert admin record if it doesn't exist yet
+        await supabase
+          .from('admins')
+          .insert([{
+            auth_user_id: data.user.id,
+            email: data.user.email,
+            name: data.user.user_metadata?.name || 'Administrator',
+            role: 'admin'
+          }]);
+      }
+    } catch (err) {
+      console.warn('Admin record link warning:', err);
+    }
+
+    const user: AdminUser = {
+      id: data.user.id,
+      email: data.user.email || email.trim(),
+      role: 'admin',
+      name: data.user.user_metadata?.name || 'Administrator',
+    };
+    localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(user));
+    return user;
   },
 
   async logout(): Promise<void> {

@@ -125,6 +125,12 @@ export const productService = {
       throw new Error('Supabase is not configured. Cannot create product.');
     }
 
+    // Verify authenticated admin session before insert
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      throw new Error('Admin authentication session expired. Please log in again.');
+    }
+
     const { data, error } = await supabase
       .from('products')
       .insert([productData])
@@ -145,6 +151,12 @@ export const productService = {
   async update(id: string, updates: Partial<Product>): Promise<Product> {
     if (!isSupabaseConfigured || !supabase) {
       throw new Error('Supabase is not configured. Cannot update product.');
+    }
+
+    // Verify authenticated admin session before update
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      throw new Error('Admin authentication session expired. Please log in again.');
     }
 
     const { data, error } = await supabase
@@ -168,6 +180,12 @@ export const productService = {
   async delete(id: string): Promise<void> {
     if (!isSupabaseConfigured || !supabase) {
       throw new Error('Supabase is not configured. Cannot delete product.');
+    }
+
+    // Verify authenticated admin session before delete
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      throw new Error('Admin authentication session expired. Please log in again.');
     }
 
     const { error } = await supabase.from('products').delete().eq('id', id);

@@ -57,12 +57,20 @@ export const AdminProducts: React.FC = () => {
   };
 
   const handleSaveProduct = async (productData: any) => {
-    if (selectedProduct) {
-      await productService.update(selectedProduct.id, productData);
-    } else {
-      await productService.create(productData);
+    try {
+      if (selectedProduct) {
+        await productService.update(selectedProduct.id, productData);
+        showToast('Product updated successfully in Supabase!', 'success');
+      } else {
+        await productService.create(productData);
+        showToast('Product created and saved to Supabase!', 'success');
+      }
+      setIsModalOpen(false);
+      await loadProducts();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to save product.', 'error');
+      throw err;
     }
-    await loadProducts();
   };
 
   const handleToggleAvailability = async (prod: Product) => {
