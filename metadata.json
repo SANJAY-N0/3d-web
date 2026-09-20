@@ -1,0 +1,6 @@
+{
+  "name": "PRINTLAB 3D - 3D Printing Showcase & UPI Ordering",
+  "description": "Modern Gen-Z 3D Printing Showcase & Instant UPI Ordering with dynamic time-based day/night themes, KPR campus delivery, and 6-stage order tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
