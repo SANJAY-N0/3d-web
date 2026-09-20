@@ -168,7 +168,7 @@ export const authService = {
         const { data, error } = await query.maybeSingle();
         if (!error && data) return true;
       } catch {
-        // Continue to local check
+        // Fallback to local check
       }
     }
 
@@ -201,69 +201,134 @@ export const authService = {
       throw new Error('Please enter your email or phone number.');
     }
 
+    if (!password) {
+      throw new Error('Please enter your password.');
+    }
+
     // 1. Supabase Auth authentication if configured
     if (isSupabaseConfigured && supabase) {
       let emailToAuth = idClean.includes('@') ? idClean : '';
 
-      // If phone provided, lookup associated email from customers table
+      // If phone provided instead of email, lookup associated email from customers table
       if (!emailToAuth && cleanPhone.length >= 10) {
-        const { data: custData } = await supabase
+        const { data: custData, error: custLookupErr } = await supabase
           .from('customers')
-          .select('*')
+          .select('email')
           .eq('phone', cleanPhone)
           .maybeSingle();
 
+        if (custLookupErr) {
+          console.warn('Phone lookup in customers table warning:', custLookupErr);
+        }
+
         if (custData && custData.email) {
-          emailToAuth = custData.email;
+          emailToAuth = custData.email.trim().toLowerCase();
+        } else {
+          throw new Error('No account found with this phone number. Please use your email or register a new account.');
         }
       }
 
-      if (emailToAuth && password) {
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: emailToAuth,
-          password,
-        });
+      if (!emailToAuth) {
+        throw new Error('Please provide a valid email address or 10-digit registered phone number.');
+      }
 
-        if (authError) {
-          throw new Error(authError.message || 'Invalid email or password.');
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: emailToAuth,
+        password,
+      });
+
+      if (authError) {
+        const msg = authError.message || '';
+        // Handle unconfirmed email error specifically
+        if (msg.toLowerCase().includes('email not confirmed') || (authError as any).code === 'email_not_confirmed') {
+          const err: any = new Error('Please confirm your email before signing in.');
+          err.code = 'email_not_confirmed';
+          err.email = emailToAuth;
+          throw err;
         }
 
-        // Fetch customer profile
-        const { data: profile } = await supabase
+        if (msg.toLowerCase().includes('invalid login credentials')) {
+          throw new Error('Invalid email or password. Please verify your credentials and try again.');
+        }
+
+        throw new Error(msg || 'Invalid email or password.');
+      }
+
+      if (!authData?.user) {
+        throw new Error('Login failed. No user returned from authentication service.');
+      }
+
+      // Fetch or link customer profile
+      let profile: any = null;
+      try {
+        const { data: existingProfile } = await supabase
           .from('customers')
           .select('*')
           .or(`auth_user_id.eq.${authData.user.id},email.eq.${emailToAuth}`)
           .maybeSingle();
 
-        const sessionUser: CustomerUser = {
-          id: profile?.id || authData.user.id,
-          auth_user_id: authData.user.id,
-          name: profile?.name || authData.user.user_metadata?.name || emailToAuth.split('@')[0],
-          email: emailToAuth,
-          phone: profile?.phone || '',
-          college: profile?.college,
-          college_type: profile?.college_type || 'KPR College',
-          roll_number: profile?.roll_number,
-          delivery_method: profile?.delivery_method || 'college_delivery',
-          department: profile?.department,
-          year: profile?.year,
-          section: profile?.section,
-          building_block: profile?.building_block,
-          pickup_location: profile?.pickup_location,
-          address: profile?.address || '',
-          city: profile?.city || 'Coimbatore',
-          state: profile?.state || 'Tamil Nadu',
-          pincode: profile?.pincode || '641407',
-          role: 'customer',
-          created_at: profile?.created_at || new Date().toISOString(),
-        };
+        profile = existingProfile;
 
-        localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(sessionUser));
-        return sessionUser;
+        // If profile exists without auth_user_id, link it now
+        if (profile && !profile.auth_user_id) {
+          await supabase
+            .from('customers')
+            .update({ auth_user_id: authData.user.id })
+            .eq('id', profile.id);
+        } else if (!profile) {
+          // If no profile exists yet, create one linking to auth_user_id
+          const newProfile = {
+            auth_user_id: authData.user.id,
+            name: authData.user.user_metadata?.name || emailToAuth.split('@')[0],
+            email: emailToAuth,
+            phone: authData.user.user_metadata?.phone || cleanPhone || '',
+            college: 'KPR College',
+            college_type: 'KPR College',
+            delivery_method: 'college_delivery',
+            address: 'KPR College Campus',
+            city: 'Coimbatore',
+            state: 'Tamil Nadu',
+            pincode: '641407',
+          };
+          const { data: inserted } = await supabase
+            .from('customers')
+            .insert([newProfile])
+            .select()
+            .maybeSingle();
+          profile = inserted;
+        }
+      } catch (err) {
+        console.warn('Customer profile lookup/link warning:', err);
       }
+
+      const sessionUser: CustomerUser = {
+        id: profile?.id || authData.user.id,
+        auth_user_id: authData.user.id,
+        name: profile?.name || authData.user.user_metadata?.name || emailToAuth.split('@')[0],
+        email: emailToAuth,
+        phone: profile?.phone || '',
+        college: profile?.college,
+        college_type: profile?.college_type || 'KPR College',
+        roll_number: profile?.roll_number,
+        delivery_method: profile?.delivery_method || 'college_delivery',
+        department: profile?.department,
+        year: profile?.year,
+        section: profile?.section,
+        building_block: profile?.building_block,
+        pickup_location: profile?.pickup_location,
+        address: profile?.address || '',
+        city: profile?.city || 'Coimbatore',
+        state: profile?.state || 'Tamil Nadu',
+        pincode: profile?.pincode || '641407',
+        role: 'customer',
+        created_at: profile?.created_at || new Date().toISOString(),
+      };
+
+      localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(sessionUser));
+      return sessionUser;
     }
 
-    // 2. Local session check
+    // 2. Offline fallback
     const current = this.getCurrentCustomer();
     if (current) {
       const emailMatch = current.email && current.email.toLowerCase() === idClean;
@@ -273,7 +338,7 @@ export const authService = {
       }
     }
 
-    throw new Error('Account not found with this email or phone. Please register to create an account.');
+    throw new Error('Account not found. Please register to create an account.');
   },
 
   async signupCustomer(data: {
@@ -294,16 +359,21 @@ export const authService = {
     city?: string;
     state?: string;
     pincode?: string;
-  }): Promise<CustomerUser> {
+  }): Promise<CustomerUser & { needsEmailConfirmation?: boolean }> {
     const cleanPhone = data.phone ? data.phone.replace(/\D/g, '') : '';
     const cleanEmail = data.email ? data.email.trim().toLowerCase() : '';
     const collegeType = data.college_type || (data.college?.toLowerCase().includes('kpr') ? 'KPR College' : 'Other');
     const collegeName = collegeType === 'KPR College' ? 'KPR College' : (data.college?.trim() || 'Other College');
 
-    let authUserId: string | undefined = undefined;
+    if (!data.password || data.password.length < 6) {
+      throw new Error('Password is required and must be at least 6 characters.');
+    }
 
-    // 1. Register with Supabase Auth if configured and password provided
-    if (isSupabaseConfigured && supabase && data.password) {
+    let authUserId: string | undefined = undefined;
+    let needsEmailConfirmation = false;
+
+    // 1. Register with Supabase Auth (pure authentication)
+    if (isSupabaseConfigured && supabase) {
       try {
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: cleanEmail,
@@ -313,19 +383,23 @@ export const authService = {
               name: data.name.trim(),
               phone: cleanPhone,
             },
+            emailRedirectTo: `${window.location.origin}/login`,
           },
         });
 
         if (authError) {
-          // If user already registered, advise login
-          if (authError.message.includes('already registered')) {
-            throw new Error('An account with this email already exists. Please sign in.');
+          if (authError.message.toLowerCase().includes('already registered')) {
+            throw new Error('An account with this email already exists. Please sign in with your password.');
           }
           throw new Error(authError.message);
         }
 
         if (authData.user) {
           authUserId = authData.user.id;
+          // If session is null, email confirmation is required by Supabase project settings
+          if (!authData.session) {
+            needsEmailConfirmation = true;
+          }
         }
       } catch (err: any) {
         throw new Error(err.message || 'Supabase authentication failed.');
@@ -333,6 +407,7 @@ export const authService = {
     }
 
     // 2. Persist customer profile to Supabase `customers` table
+    // NOTE: PASSWORDS ARE NEVER STORED IN THE CUSTOMERS TABLE. Passwords belong solely to Supabase Auth.
     let customerId = 'cust-' + Date.now();
     if (isSupabaseConfigured && supabase) {
       try {
@@ -360,7 +435,7 @@ export const authService = {
           .from('customers')
           .insert([customerRow])
           .select()
-          .single();
+          .maybeSingle();
 
         if (!insertError && inserted) {
           customerId = inserted.id;
@@ -370,8 +445,8 @@ export const authService = {
       }
     }
 
-    // 3. Create session user object (NEVER storing raw password)
-    const newCustomer: CustomerUser = {
+    // 3. Create session customer object
+    const newCustomer: CustomerUser & { needsEmailConfirmation?: boolean } = {
       id: customerId,
       auth_user_id: authUserId,
       name: data.name.trim(),
@@ -392,10 +467,38 @@ export const authService = {
       pincode: data.pincode?.trim() || '641407',
       role: 'customer',
       created_at: new Date().toISOString(),
+      needsEmailConfirmation,
     };
 
-    localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(newCustomer));
+    // Only set active session if email confirmation was not required or already confirmed
+    if (!needsEmailConfirmation) {
+      localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(newCustomer));
+    }
+
     return newCustomer;
+  },
+
+  async resendConfirmationEmail(email: string): Promise<void> {
+    if (!email || !email.includes('@')) {
+      throw new Error('Please enter a valid email address.');
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email.trim().toLowerCase(),
+        options: {
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to resend confirmation email.');
+      }
+      return;
+    }
+
+    throw new Error('Supabase is not configured.');
   },
 
   async resetCustomerPassword(email: string): Promise<void> {
@@ -404,15 +507,33 @@ export const authService = {
     }
 
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/login`,
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+        redirectTo: `${window.location.origin}/login?type=recovery`,
       });
       if (error) throw new Error(error.message);
       return;
     }
 
-    // In offline mode
     throw new Error('Password reset requires an active Supabase connection.');
+  },
+
+  async updateCustomerPassword(newPassword: string): Promise<void> {
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to update password.');
+      }
+      return;
+    }
+
+    throw new Error('Password update requires an active Supabase connection.');
   },
 
   async updateCustomerProfile(updates: Partial<CustomerUser>): Promise<CustomerUser> {

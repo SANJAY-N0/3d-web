@@ -12,11 +12,14 @@ import {
   GraduationCap,
   MapPin,
   ArrowRight,
+  ArrowLeft,
   Sparkles,
   KeyRound,
   AlertCircle,
   LogIn,
   UserPlus,
+  RefreshCw,
+  CheckCircle2,
 } from 'lucide-react';
 
 export const AuthPortal: React.FC = () => {
@@ -25,6 +28,18 @@ export const AuthPortal: React.FC = () => {
   const { showToast } = useToast();
 
   const [customerMode, setCustomerMode] = useState<'signin' | 'signup'>('signin');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+
+  // Unconfirmed Email Handling
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
+  const [resendingEmail, setResendingEmail] = useState(false);
+
+  // Recovery Mode State
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [updatingPassword, setUpdatingPassword] = useState(false);
 
   // Customer Login Form State (Clean: No hardcoded demo credentials)
   const [customerIdentifier, setCustomerIdentifier] = useState('');
@@ -80,8 +95,16 @@ export const AuthPortal: React.FC = () => {
     // If admin tab requested, redirect to dedicated /admin/login route
     if (tabParam === 'admin') {
       navigate('/admin/login', { replace: true });
+      return;
     }
-  }, [tabParam, navigate]);
+
+    // Check for password recovery link from Supabase Auth
+    const typeParam = searchParams.get('type');
+    const hash = window.location.hash;
+    if (typeParam === 'recovery' || hash.includes('type=recovery')) {
+      setRecoveryMode(true);
+    }
+  }, [tabParam, searchParams, navigate]);
 
   // Handle Customer Sign In
   const handleCustomerLogin = async (e: React.FormEvent) => {
@@ -90,35 +113,54 @@ export const AuthPortal: React.FC = () => {
       setErrorMessage('Please enter your email or 10-digit mobile phone number.');
       return;
     }
+    if (!customerPassword) {
+      setErrorMessage('Please enter your password.');
+      return;
+    }
 
     setLoading(true);
     setErrorMessage('');
-
-    // Check if account exists in authentication system
-    const exists = authService.checkCustomerExists(customerIdentifier);
-    if (!exists) {
-      setLoading(false);
-      // New user flow: show registration form only when user does not have an account
-      setCustomerMode('signup');
-      setSignupForm((prev) => ({
-        ...prev,
-        email: customerIdentifier.includes('@') ? customerIdentifier.trim() : prev.email,
-        phone: !customerIdentifier.includes('@') ? customerIdentifier.replace(/\D/g, '') : prev.phone,
-      }));
-      setErrorMessage('No existing account found for this email/phone. Please complete registration below to continue.');
-      showToast('No account found. Please complete registration.', 'info');
-      return;
-    }
+    setUnconfirmedEmail(null);
 
     try {
       const user = await authService.loginCustomer(customerIdentifier, customerPassword);
       showToast(`Welcome back, ${user.name}!`, 'success');
       navigate(getResolvedCustomerRedirect());
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to login as customer.');
-      showToast(err.message || 'Customer login error', 'error');
+      const msg = err.message || '';
+      if (
+        err.code === 'email_not_confirmed' ||
+        msg.toLowerCase().includes('email not confirmed') ||
+        msg.toLowerCase().includes('confirm your email')
+      ) {
+        const email = err.email || (customerIdentifier.includes('@') ? customerIdentifier.trim() : null);
+        setUnconfirmedEmail(email);
+        setErrorMessage('Please confirm your email before signing in.');
+      } else {
+        setErrorMessage(msg || 'Failed to login as customer.');
+      }
+      showToast(msg || 'Customer login error', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Handle Resend Confirmation Email
+  const handleResendConfirmation = async () => {
+    const emailToResend = unconfirmedEmail || (customerIdentifier.includes('@') ? customerIdentifier.trim() : '');
+    if (!emailToResend) {
+      showToast('Please enter your account email address to resend confirmation.', 'error');
+      return;
+    }
+
+    setResendingEmail(true);
+    try {
+      await authService.resendConfirmationEmail(emailToResend);
+      showToast(`Confirmation email resent to ${emailToResend}! Check your inbox.`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to resend confirmation email.', 'error');
+    } finally {
+      setResendingEmail(false);
     }
   };
 
@@ -139,15 +181,8 @@ export const AuthPortal: React.FC = () => {
       setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
-
-    // Check if user already has an account to avoid duplicate account creation
-    const emailExists = authService.checkCustomerExists(signupForm.email);
-    const phoneExists = authService.checkCustomerExists(signupForm.phone);
-    if (emailExists || phoneExists) {
-      setCustomerIdentifier(signupForm.email.trim() || signupForm.phone.trim());
-      setCustomerMode('signin');
-      setErrorMessage('An account with this email or phone already exists! Please enter your password to sign in.');
-      showToast('Account already exists. Please sign in.', 'info');
+    if (!signupForm.password || signupForm.password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters long.');
       return;
     }
 
@@ -158,10 +193,20 @@ export const AuthPortal: React.FC = () => {
 
     setLoading(true);
     setErrorMessage('');
+    setUnconfirmedEmail(null);
+
     try {
       const user = await authService.signupCustomer(signupForm);
-      showToast(`Account created successfully! Welcome, ${user.name}.`, 'success');
-      navigate(getResolvedCustomerRedirect());
+      if (user.needsEmailConfirmation) {
+        showToast('Registration successful! Please confirm your email before signing in.', 'info');
+        setCustomerMode('signin');
+        setCustomerIdentifier(signupForm.email.trim());
+        setUnconfirmedEmail(signupForm.email.trim());
+        setErrorMessage('Account registered! Please click the confirmation link sent to your email before signing in.');
+      } else {
+        showToast(`Account created successfully! Welcome, ${user.name}.`, 'success');
+        navigate(getResolvedCustomerRedirect());
+      }
     } catch (err: any) {
       setErrorMessage(err.message || 'Registration failed.');
       showToast(err.message || 'Registration error', 'error');
@@ -170,20 +215,50 @@ export const AuthPortal: React.FC = () => {
     }
   };
 
-  // Handle Forgot Password
-  const handleForgotPassword = async () => {
-    if (!customerIdentifier.trim() || !customerIdentifier.includes('@')) {
-      showToast('Please enter your account email address above to reset password.', 'error');
+  // Handle Password Reset Request
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim() || !forgotEmail.includes('@')) {
+      showToast('Please enter a valid email address.', 'error');
       return;
     }
     try {
       setLoading(true);
-      await authService.resetCustomerPassword(customerIdentifier.trim());
+      await authService.resetCustomerPassword(forgotEmail.trim());
       showToast('Password reset link sent to your email address.', 'success');
+      setShowForgotPassword(false);
     } catch (err: any) {
       showToast(err.message || 'Failed to send password reset email.', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Handle Update Password (from Recovery Link)
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      setErrorMessage('Password must be at least 6 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setErrorMessage('Passwords do not match.');
+      return;
+    }
+
+    setUpdatingPassword(true);
+    setErrorMessage('');
+
+    try {
+      await authService.updateCustomerPassword(newPassword);
+      showToast('Password updated successfully! Welcome back.', 'success');
+      setRecoveryMode(false);
+      navigate(getResolvedCustomerRedirect());
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to update password.');
+      showToast(err.message || 'Failed to update password', 'error');
+    } finally {
+      setUpdatingPassword(false);
     }
   };
 
@@ -215,105 +290,145 @@ export const AuthPortal: React.FC = () => {
 
         <div className="bg-white dark:bg-neutral-900/60 backdrop-blur-xl border border-slate-200 dark:border-neutral-800 rounded-2xl p-6 sm:p-8 space-y-6 shadow-sm dark:shadow-2xl">
           {/* Context Banner when coming from Buy Product / Order */}
-            {redirectUrl.includes('/order') && (
-              <div className="p-3.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-500/30 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-cyan-600 text-white flex items-center justify-center shrink-0">
-                  <Box className="w-4 h-4" />
-                </div>
-                <div className="space-y-0.5">
-                  <span className="text-xs font-semibold text-cyan-800 dark:text-cyan-300 block">
-                    Complete Your 3D Print Order
-                  </span>
-                  <p className="text-[11px] text-slate-600 dark:text-neutral-400">
-                    {customerMode === 'signin'
-                      ? 'Existing Customer: Sign in with your password to proceed to Checkout.'
-                      : 'New Customer: Complete registration once to proceed to Checkout.'}
+          {redirectUrl.includes('/order') && (
+            <div className="p-3.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-500/30 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-cyan-600 text-white flex items-center justify-center shrink-0">
+                <Box className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-xs font-semibold text-cyan-800 dark:text-cyan-300 block">
+                  Complete Your 3D Print Order
+                </span>
+                <p className="text-[11px] text-slate-600 dark:text-neutral-400">
+                  {customerMode === 'signin'
+                    ? 'Existing Customer: Sign in with your password to proceed to Checkout.'
+                    : 'New Customer: Complete registration once to proceed to Checkout.'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Unconfirmed Email Alert with 1-Click Resend */}
+          {unconfirmedEmail && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700/60 rounded-xl space-y-3">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                    Email Confirmation Required
+                  </p>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                    Please confirm your email address (<span className="font-mono font-semibold">{unconfirmedEmail}</span>) before signing in. A confirmation link has been sent to your inbox.
                   </p>
                 </div>
               </div>
-            )}
-
-            {/* Customer Subtab: Sign In vs Sign Up */}
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-neutral-800 pb-4">
-              <div>
-                <h2 className="font-display font-semibold text-lg text-slate-900 dark:text-white">
-                  {customerMode === 'signin' ? 'Customer Sign In' : 'Create Account'}
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-neutral-400">
-                  {customerMode === 'signin'
-                    ? 'Enter your credentials to continue'
-                    : 'Register once to manage orders and checkout'}
-                </p>
-              </div>
-
-              <div className="flex bg-slate-100 dark:bg-neutral-950 p-1 rounded-xl border border-slate-200 dark:border-neutral-800">
+              <div className="flex items-center gap-3 pt-1">
                 <button
                   type="button"
-                  onClick={() => {
-                    setCustomerMode('signin');
-                    setErrorMessage('');
-                  }}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                    customerMode === 'signin'
-                      ? 'bg-white dark:bg-neutral-800 text-cyan-700 dark:text-cyan-300 font-semibold shadow-sm'
-                      : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
+                  disabled={resendingEmail}
+                  onClick={handleResendConfirmation}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg shadow-sm active:scale-98 transition-all cursor-pointer disabled:opacity-50"
                 >
-                  Sign In
+                  <RefreshCw className={`w-3.5 h-3.5 ${resendingEmail ? 'animate-spin' : ''}`} />
+                  <span>{resendingEmail ? 'Resending Link...' : 'Resend Confirmation Email'}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setCustomerMode('signup');
-                    setErrorMessage('');
-                  }}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                    customerMode === 'signup'
-                      ? 'bg-white dark:bg-neutral-800 text-cyan-700 dark:text-cyan-300 font-semibold shadow-sm'
-                      : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
+                  onClick={() => setUnconfirmedEmail(null)}
+                  className="text-xs text-amber-700 dark:text-amber-400 hover:underline cursor-pointer font-medium"
                 >
-                  Register
+                  Dismiss
                 </button>
               </div>
             </div>
+          )}
 
-            {/* Customer Sign In Form - Pure Real Authentication */}
-            {customerMode === 'signin' ? (
-              <form onSubmit={handleCustomerLogin} className="space-y-4">
+          {/* Recovery Mode (Set New Password) */}
+          {recoveryMode ? (
+            <div className="space-y-4">
+              <div className="space-y-1 pb-3 border-b border-slate-200 dark:border-neutral-800">
+                <h2 className="font-display font-semibold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                  <span>Set New Password</span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-neutral-400">
+                  Enter your new password below to update your account credentials.
+                </p>
+              </div>
+
+              <form onSubmit={handleUpdatePassword} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1.5 font-semibold">
-                    <Mail className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Email or Mobile Phone
+                    <Lock className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> New Password *
                   </label>
                   <input
-                    type="text"
+                    type="password"
                     required
-                    value={customerIdentifier}
-                    onChange={(e) => setCustomerIdentifier(e.target.value)}
-                    placeholder="e.g. name@example.com or 9876543210"
+                    minLength={6}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="At least 6 characters"
                     className="w-full px-4 py-3 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1.5 font-semibold">
-                      <Lock className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Password *
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleForgotPassword}
-                      className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
-                    >
-                      Forgot Password?
-                    </button>
-                  </div>
+                  <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1.5 font-semibold">
+                    <Lock className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Confirm New Password *
+                  </label>
                   <input
                     type="password"
                     required
-                    value={customerPassword}
-                    onChange={(e) => setCustomerPassword(e.target.value)}
-                    placeholder="Enter your password"
+                    minLength={6}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={updatingPassword}
+                  className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-lg shadow-cyan-600/20 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>{updatingPassword ? 'Updating Password...' : 'Save New Password & Sign In'}</span>
+                </button>
+              </form>
+            </div>
+          ) : showForgotPassword ? (
+            /* Forgot Password Flow */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-neutral-800">
+                <div>
+                  <h2 className="font-display font-semibold text-lg text-slate-900 dark:text-white">
+                    Reset Password
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-neutral-400">
+                    Enter your registered email to receive a password reset link.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(false)}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 dark:text-neutral-400 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" /> Back
+                </button>
+              </div>
+
+              <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1.5 font-semibold">
+                    <Mail className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Account Email Address *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="e.g. name@example.com"
                     className="w-full px-4 py-3 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
                   />
                 </div>
@@ -323,26 +438,136 @@ export const AuthPortal: React.FC = () => {
                   disabled={loading}
                   className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-lg shadow-cyan-600/20 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
-                  <LogIn className="w-4 h-4" />
-                  <span>{loading ? 'Signing In...' : 'Login'}</span>
+                  <Mail className="w-4 h-4" />
+                  <span>{loading ? 'Sending Link...' : 'Send Password Reset Link'}</span>
                 </button>
 
-                <div className="pt-1 text-center">
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPassword(false)}
+                    className="text-xs text-cyan-700 dark:text-cyan-400 hover:underline font-medium cursor-pointer"
+                  >
+                    Remember your password? Back to Sign In →
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (
+            <>
+              {/* Customer Subtab: Sign In vs Sign Up */}
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-neutral-800 pb-4">
+                <div>
+                  <h2 className="font-display font-semibold text-lg text-slate-900 dark:text-white">
+                    {customerMode === 'signin' ? 'Customer Sign In' : 'Create Account'}
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-neutral-400">
+                    {customerMode === 'signin'
+                      ? 'Enter your credentials to continue'
+                      : 'Register once to manage orders and checkout'}
+                  </p>
+                </div>
+
+                <div className="flex bg-slate-100 dark:bg-neutral-950 p-1 rounded-xl border border-slate-200 dark:border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomerMode('signin');
+                      setErrorMessage('');
+                    }}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                      customerMode === 'signin'
+                        ? 'bg-white dark:bg-neutral-800 text-cyan-700 dark:text-cyan-300 font-semibold shadow-sm'
+                        : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Sign In
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
                       setCustomerMode('signup');
                       setErrorMessage('');
                     }}
-                    className="text-xs text-cyan-700 dark:text-cyan-400 hover:underline font-medium cursor-pointer"
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                      customerMode === 'signup'
+                        ? 'bg-white dark:bg-neutral-800 text-cyan-700 dark:text-cyan-300 font-semibold shadow-sm'
+                        : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
                   >
-                    Don't have an account? Create Account →
+                    Register
                   </button>
                 </div>
-              </form>
-            ) : (
-              /* Customer Sign Up Form */
-              <form onSubmit={handleCustomerSignup} className="space-y-4">
+              </div>
+
+              {/* Customer Sign In Form - Pure Real Authentication */}
+              {customerMode === 'signin' ? (
+                <form onSubmit={handleCustomerLogin} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1.5 font-semibold">
+                      <Mail className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Email or Mobile Phone
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={customerIdentifier}
+                      onChange={(e) => setCustomerIdentifier(e.target.value)}
+                      placeholder="e.g. name@example.com or 9876543210"
+                      className="w-full px-4 py-3 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1.5 font-semibold">
+                        <Lock className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Password *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotEmail(customerIdentifier.includes('@') ? customerIdentifier.trim() : '');
+                          setShowForgotPassword(true);
+                        }}
+                        className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
+                    <input
+                      type="password"
+                      required
+                      value={customerPassword}
+                      onChange={(e) => setCustomerPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      className="w-full px-4 py-3 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-lg shadow-cyan-600/20 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    <span>{loading ? 'Signing In...' : 'Login'}</span>
+                  </button>
+
+                  <div className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerMode('signup');
+                        setErrorMessage('');
+                      }}
+                      className="text-xs text-cyan-700 dark:text-cyan-400 hover:underline font-medium cursor-pointer"
+                    >
+                      Don't have an account? Create Account →
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* Customer Sign Up Form */
+                <form onSubmit={handleCustomerSignup} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
@@ -535,8 +760,10 @@ export const AuthPortal: React.FC = () => {
                 </div>
               </form>
             )}
+            </>
+          )}
 
-            {/* Continue as Guest option */}
+          {/* Continue as Guest option */}
             <div className="pt-2 border-t border-slate-200 dark:border-neutral-800 text-center space-y-2">
               <p className="text-xs text-slate-500 dark:text-neutral-400">
                 Don't want to create an account right now?
