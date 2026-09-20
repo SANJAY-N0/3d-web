@@ -2,18 +2,29 @@ import { Customer } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const CUSTOMERS_STORAGE_KEY = 'printlab_customers_data_v1';
+const FAKE_CUSTOMER_NAMES = new Set(['sanjay kumar', 'priya sharma', 'aditya varma']);
+
+function isFakeCustomer(c: any): boolean {
+  if (!c) return true;
+  if (c.name && FAKE_CUSTOMER_NAMES.has(c.name.trim().toLowerCase())) return true;
+  if (c.email && (c.email.includes('test.com') || c.email.includes('example.com'))) return true;
+  return false;
+}
 
 function getLocalCustomers(): Customer[] {
   try {
     const raw = localStorage.getItem(CUSTOMERS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((c) => !isFakeCustomer(c)) : [];
   } catch {
     return [];
   }
 }
 
 function saveLocalCustomers(customers: Customer[]): void {
-  localStorage.setItem(CUSTOMERS_STORAGE_KEY, JSON.stringify(customers));
+  const cleaned = customers.filter((c) => !isFakeCustomer(c));
+  localStorage.setItem(CUSTOMERS_STORAGE_KEY, JSON.stringify(cleaned));
 }
 
 export const customerService = {
@@ -96,9 +107,10 @@ export const customerService = {
       try {
         const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
         if (error) throw error;
-        if (data) return data as Customer[];
+        return (data || []).filter((c) => !isFakeCustomer(c)) as Customer[];
       } catch (err) {
         console.warn('Supabase fetch customers failed:', err);
+        return [];
       }
     }
     return getLocalCustomers();

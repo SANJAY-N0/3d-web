@@ -118,21 +118,27 @@ export const Products: React.FC = () => {
             <FilterX className="w-6 h-6" />
           </div>
           <div className="space-y-1">
-            <h3 className="font-display font-semibold text-base sm:text-lg text-slate-900 dark:text-white">No products found</h3>
+            <h3 className="font-display font-semibold text-base sm:text-lg text-slate-900 dark:text-white">
+              {products.length === 0 ? 'No products available' : 'No products found'}
+            </h3>
             <p className="text-xs text-slate-500 dark:text-neutral-400 max-w-sm mx-auto">
-              We couldn't find any 3D print items matching your search or filters.
+              {products.length === 0
+                ? 'There are currently no products available in the catalog.'
+                : "We couldn't find any 3D print items matching your search or filters."}
             </p>
           </div>
-          <button
-            onClick={() => {
-              setSearchQuery('');
-              handleCategorySelect('All');
-              setInStockOnly(false);
-            }}
-            className="px-4 py-2 bg-slate-100 dark:bg-neutral-800 hover:bg-slate-200 dark:hover:bg-neutral-700 text-cyan-700 dark:text-cyan-300 text-xs font-mono rounded-xl border border-slate-300 dark:border-neutral-700 cursor-pointer"
-          >
-            Reset All Filters
-          </button>
+          {products.length > 0 && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                handleCategorySelect('All');
+                setInStockOnly(false);
+              }}
+              className="px-4 py-2 bg-slate-100 dark:bg-neutral-800 hover:bg-slate-200 dark:hover:bg-neutral-700 text-cyan-700 dark:text-cyan-300 text-xs font-mono rounded-xl border border-slate-300 dark:border-neutral-700 cursor-pointer"
+            >
+              Reset All Filters
+            </button>
+          )}
         </div>
       )}
     </div>

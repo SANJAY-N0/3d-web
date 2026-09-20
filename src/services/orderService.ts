@@ -49,32 +49,34 @@ export const orderService = {
    * Fetch all orders from Supabase (pure real data, no fake mock fallback)
    */
   async getAll(): Promise<Order[]> {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('orders')
-          .select(`
-            *,
-            product:products(*),
-            customer:customers(*),
-            payment:payments(*)
-          `)
-          .order('created_at', { ascending: false });
-
-        if (error) {
-          console.error('Supabase orders query error:', error);
-          throw error;
-        }
-
-        const normalized = (data || []).map(normalizeOrder).filter((o) => !isFakeOrder(o));
-        saveLocalOrders(normalized);
-        return normalized;
-      } catch (err) {
-        console.warn('Supabase orders fetch error, using local cache:', err);
-        return getLocalOrders();
-      }
+    if (!isSupabaseConfigured || !supabase) {
+      console.warn('Supabase is not configured. Returning empty orders list.');
+      return [];
     }
-    return getLocalOrders();
+
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          product:products(*),
+          customer:customers(*),
+          payment:payments(*)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Supabase orders query error:', error);
+        return [];
+      }
+
+      const normalized = (data || []).map(normalizeOrder).filter((o) => !isFakeOrder(o));
+      saveLocalOrders(normalized);
+      return normalized;
+    } catch (err) {
+      console.error('Supabase orders fetch error:', err);
+      return [];
+    }
   },
 
   /**
@@ -95,14 +97,16 @@ export const orderService = {
           .maybeSingle();
 
         if (error) throw error;
-        if (data) return normalizeOrder(data);
+        if (data && !isFakeOrder(data)) return normalizeOrder(data);
+        return null;
       } catch (err) {
         console.warn('Supabase single order fetch failed:', err);
+        return null;
       }
     }
 
     const all = getLocalOrders();
-    return all.find((o) => o.id === idOrOrderNumber || o.order_number.toUpperCase() === idOrOrderNumber.toUpperCase()) || null;
+    return all.find((o) => (o.id === idOrOrderNumber || o.order_number.toUpperCase() === idOrOrderNumber.toUpperCase()) && !isFakeOrder(o)) || null;
   },
 
   /**
