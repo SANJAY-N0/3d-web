@@ -6,3 +6,4 @@ export * from './orderService';
 export * from './paymentService';
 export * from './authService';
 export * from './customerService';
+export * from './showcaseService';

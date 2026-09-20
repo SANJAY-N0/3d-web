@@ -221,3 +221,18 @@ export interface AdminStats {
   totalRevenue: number;
 }
 
+export interface ShowcaseItem {
+  id: string;
+  image_url: string;
+  cloudinary_public_id?: string;
+  title: string;
+  subtitle: string;
+  button_text: string;
+  button_link: string;
+  display_order: number;
+  display_duration: number; // in seconds (2 - 60, default 5)
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+

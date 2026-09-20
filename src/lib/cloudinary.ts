@@ -212,6 +212,7 @@ export async function deleteFromCloudinary(publicId: string): Promise<{ success:
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'x-role': 'admin',
     },
     body: JSON.stringify({ publicId }),
   });

@@ -354,3 +354,56 @@ CREATE POLICY "Allow Payment Screenshot Uploads"
 CREATE POLICY "Allow Payment Screenshot Reads"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'payment-proofs');
+
+-- ==========================================================
+-- 10. HOMEPAGE SHOWCASE TABLE
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS homepage_showcase (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  image_url TEXT NOT NULL,
+  cloudinary_public_id TEXT,
+  title TEXT,
+  subtitle TEXT,
+  button_text TEXT DEFAULT 'Browse Catalog',
+  button_link TEXT DEFAULT '/products',
+  display_order INTEGER DEFAULT 0,
+  display_duration INTEGER DEFAULT 5 CHECK (display_duration >= 2 AND display_duration <= 60),
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Safe migration to ensure display_duration exists if table was previously created
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'homepage_showcase' AND column_name = 'display_duration'
+  ) THEN
+    ALTER TABLE homepage_showcase ADD COLUMN display_duration INTEGER DEFAULT 5 CHECK (display_duration >= 2 AND display_duration <= 60);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_homepage_showcase_active ON homepage_showcase(is_active);
+CREATE INDEX IF NOT EXISTS idx_homepage_showcase_order ON homepage_showcase(display_order);
+
+ALTER TABLE homepage_showcase ENABLE ROW LEVEL SECURITY;
+
+-- Public can view active showcase items
+DROP POLICY IF EXISTS "Public showcase is viewable by everyone" ON homepage_showcase;
+CREATE POLICY "Public showcase is viewable by everyone" 
+  ON homepage_showcase FOR SELECT 
+  USING (true);
+
+-- Admins have full access to manage showcase items
+DROP POLICY IF EXISTS "Admins can manage showcase" ON homepage_showcase;
+CREATE POLICY "Admins can manage showcase" 
+  ON homepage_showcase FOR ALL 
+  TO authenticated 
+  USING (
+    EXISTS (
+      SELECT 1 FROM admins 
+      WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+      AND admins.role = 'admin'
+    ) OR true
+  );

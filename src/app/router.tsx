@@ -22,6 +22,7 @@ const AdminLogin = lazy(() => import('../pages/admin/AdminLogin').then((m) => ({
 const AdminDashboard = lazy(() => import('../pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const AdminOrders = lazy(() => import('../pages/admin/AdminOrders').then((m) => ({ default: m.AdminOrders })));
 const AdminProducts = lazy(() => import('../pages/admin/AdminProducts').then((m) => ({ default: m.AdminProducts })));
+const AdminShowcase = lazy(() => import('../pages/admin/AdminShowcase').then((m) => ({ default: m.AdminShowcase })));
 const AdminSettings = lazy(() => import('../pages/admin/AdminSettings').then((m) => ({ default: m.AdminSettings })));
 import { AdminProtectedRoute } from '../components/admin/AdminProtectedRoute';
 
@@ -91,6 +92,14 @@ export const AppRouter: React.FC = () => {
               element={
                 <AdminProtectedRoute>
                   <AdminProducts />
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/showcase"
+              element={
+                <AdminProtectedRoute>
+                  <AdminShowcase />
                 </AdminProtectedRoute>
               }
             />

@@ -15,6 +15,7 @@ import {
   Minimize2,
   Sun,
   Moon,
+  Sliders,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useToast } from '../common/Toast';
@@ -84,6 +85,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
     { label: 'Orders & Payments', path: '/admin/orders', icon: ShoppingBag },
     { label: 'Product Catalog', path: '/admin/products', icon: Box },
+    { label: 'Homepage Showcase', path: '/admin/showcase', icon: Sliders },
     { label: 'Settings & Supabase', path: '/admin/settings', icon: Settings },
   ];
 
