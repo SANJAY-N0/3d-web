@@ -13,7 +13,10 @@ import {
   X,
   Maximize2,
   Minimize2,
+  Sun,
+  Moon,
 } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 import { useToast } from '../common/Toast';
 
 interface AdminLayoutProps {
@@ -24,6 +27,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { theme, toggleTheme } = useTheme();
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -159,6 +163,27 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           </div>
 
           <div className="flex flex-col gap-1.5">
+            {/* Theme Toggle Button in Sidebar */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 hover:text-slate-900 dark:text-neutral-300 dark:hover:text-white text-xs transition-colors border border-slate-200 dark:border-neutral-800 cursor-pointer shadow-sm"
+              title={theme === 'light' ? 'Switch to Dark Mode (🌙)' : 'Switch to Light Mode (☀️)'}
+              aria-label={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            >
+              <span className="flex items-center gap-2 font-mono">
+                {theme === 'light' ? (
+                  <Sun className="w-3.5 h-3.5 text-amber-500 animate-in spin-in-180" />
+                ) : (
+                  <Moon className="w-3.5 h-3.5 text-cyan-400 animate-in spin-in-180" />
+                )}
+                <span>{theme === 'light' ? 'Light Theme' : 'Dark Theme'}</span>
+              </span>
+              <kbd className="px-1.5 py-0.5 text-[9px] font-mono bg-white dark:bg-neutral-800 rounded border border-slate-300 dark:border-neutral-700 text-slate-500 dark:text-neutral-400">
+                {theme === 'light' ? '☀️' : '🌙'}
+              </kbd>
+            </button>
+
             {/* Fullscreen Toggle Button */}
             <button
               type="button"
@@ -211,6 +236,20 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-2 rounded-lg bg-slate-100 dark:bg-neutral-900 text-slate-700 dark:text-neutral-300 border border-slate-200 dark:border-neutral-800 cursor-pointer flex items-center justify-center"
+            title={theme === 'light' ? 'Switch to Dark Mode (🌙)' : 'Switch to Light Mode (☀️)'}
+            aria-label={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+          >
+            {theme === 'light' ? (
+              <Sun className="w-4 h-4 text-amber-500 animate-in spin-in-180" />
+            ) : (
+              <Moon className="w-4 h-4 text-cyan-400 animate-in spin-in-180" />
+            )}
+          </button>
+
           <button
             onClick={toggleFullscreen}
             className="p-2 rounded-lg bg-slate-100 dark:bg-neutral-900 text-slate-700 dark:text-neutral-300 border border-slate-200 dark:border-neutral-800 cursor-pointer"
@@ -272,6 +311,27 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Theme Toggle Button */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 dark:bg-neutral-800/90 dark:hover:bg-neutral-700 text-slate-700 hover:text-slate-900 dark:text-neutral-200 dark:hover:text-white text-xs font-mono transition-colors border border-slate-300 dark:border-neutral-700/80 cursor-pointer shadow-sm"
+              title={theme === 'light' ? 'Switch to Dark Mode (🌙)' : 'Switch to Light Mode (☀️)'}
+              aria-label={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            >
+              {theme === 'light' ? (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-amber-500 animate-in spin-in-180" />
+                  <span>Light Mode</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-cyan-400 animate-in spin-in-180" />
+                  <span>Dark Mode</span>
+                </>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={toggleFullscreen}

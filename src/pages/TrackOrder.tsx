@@ -157,7 +157,7 @@ export const TrackOrder: React.FC = () => {
           Track Your 3D Creation
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-neutral-400">
-          Enter your Order ID (e.g. 3DP-2026-00124) or Phone Number to monitor live slicing and delivery progress.
+          Enter your Order ID or Mobile Number to monitor live slicing and delivery progress.
         </p>
 
         {/* Search input bar */}
@@ -515,7 +515,7 @@ export const TrackOrder: React.FC = () => {
           <div className="space-y-1">
             <h3 className="font-display font-semibold text-base text-slate-900 dark:text-white">Real-Time Order Tracking</h3>
             <p className="text-xs text-slate-500 dark:text-neutral-400">
-              Enter your Order ID (e.g. 3DP-2026-00124) or 10-digit Mobile Number in the box above to track live 3D printing and delivery updates.
+              Enter your Order ID or 10-digit Mobile Number in the box above to track live 3D printing and delivery updates.
             </p>
           </div>
         </div>

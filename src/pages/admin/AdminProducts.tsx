@@ -153,8 +153,20 @@ export const AdminProducts: React.FC = () => {
                   src={cloudinaryPresets.card(prod.main_image || prod.image_url)}
                   alt={prod.name}
                   loading="lazy"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    target.style.display = 'none';
+                    const fallback = target.parentElement?.querySelector('.img-fallback') as HTMLElement | null;
+                    if (fallback) fallback.style.display = 'flex';
+                  }}
                   className="w-full h-full object-cover object-center"
                 />
+                <div
+                  className="img-fallback w-full h-full hidden flex-col items-center justify-center bg-slate-100 dark:bg-neutral-900 text-slate-400 dark:text-neutral-500 p-4 text-center"
+                >
+                  <Box className="w-8 h-8 text-cyan-500 mb-1" />
+                  <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400">3D Model Ready</span>
+                </div>
                 <div className="absolute top-2 left-2 flex flex-wrap gap-1.5">
                   <span className="px-2 py-0.5 rounded bg-black/80 backdrop-blur-md text-[10px] font-mono text-cyan-300 border border-neutral-700">
                     {prod.category}

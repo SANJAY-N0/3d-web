@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Layers,
   FileSpreadsheet,
+  Trash2,
 } from 'lucide-react';
 import { useToast } from '../../components/common/Toast';
 
@@ -106,6 +107,18 @@ export const AdminOrders: React.FC = () => {
     if (selectedOrder && selectedOrder.id === orderId) {
       const updated = await orderService.getById(orderId);
       setSelectedOrder(updated);
+    }
+  };
+
+  const handleDeleteOrder = async (order: Order) => {
+    if (window.confirm(`Are you sure you want to delete order ${order.order_number}?`)) {
+      try {
+        await orderService.delete(order.id);
+        showToast(`Order ${order.order_number} deleted.`, 'info');
+        await loadOrders();
+      } catch (err: any) {
+        showToast('Failed to delete order.', 'error');
+      }
     }
   };
 
@@ -310,16 +323,25 @@ export const AdminOrders: React.FC = () => {
                     </td>
 
                     <td className="py-4 px-3 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => {
-                          setSelectedOrder(ord);
-                          setIsModalOpen(true);
-                        }}
-                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors border border-slate-300 dark:border-neutral-700 cursor-pointer shadow-sm"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                        <span>Inspect & Verify</span>
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => {
+                            setSelectedOrder(ord);
+                            setIsModalOpen(true);
+                          }}
+                          className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors border border-slate-300 dark:border-neutral-700 cursor-pointer shadow-sm"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                          <span>Inspect & Verify</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteOrder(ord)}
+                          className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 hover:text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/30 transition-colors cursor-pointer"
+                          title="Delete Order"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

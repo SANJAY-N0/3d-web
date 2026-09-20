@@ -177,18 +177,18 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95">
+      <div className="bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95">
         {/* Header */}
-        <div className="p-5 border-b border-neutral-800 flex items-center justify-between">
+        <div className="p-5 border-b border-slate-200 dark:border-neutral-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Box className="w-5 h-5 text-cyan-400" />
-            <h2 className="font-display font-bold text-lg text-white">
+            <Box className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+            <h2 className="font-display font-bold text-lg text-slate-900 dark:text-white">
               {initialProduct ? 'Edit 3D Product' : 'Add New 3D Print Product'}
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:text-neutral-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -199,63 +199,63 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           {/* Row 1: Name & Slug */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="font-mono text-neutral-300">Product Name *</label>
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Product Name *</label>
               <input
                 type="text"
                 required
                 value={formData.name}
                 onChange={(e) => handleNameChange(e.target.value)}
                 placeholder="Product name"
-                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
               />
             </div>
 
             <div className="space-y-1">
-              <label className="font-mono text-neutral-300">URL Slug *</label>
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">URL Slug *</label>
               <input
                 type="text"
                 required
                 value={formData.slug}
                 onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
                 placeholder="product-url-slug"
-                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-neutral-300 font-mono focus:outline-none focus:border-cyan-500"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-700 dark:text-neutral-300 font-mono focus:outline-none focus:border-cyan-500"
               />
             </div>
           </div>
 
           {/* Description */}
           <div className="space-y-1">
-            <label className="font-mono text-neutral-300">Description *</label>
+            <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Description *</label>
             <textarea
               required
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="Enter detailed product description..."
-              className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500 leading-relaxed"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500 leading-relaxed"
             />
           </div>
 
           {/* Row 2: Price, Category, Material */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1">
-              <label className="font-mono text-neutral-300">Price (₹ INR) *</label>
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Price (₹ INR) *</label>
               <input
                 type="number"
                 required
                 min={1}
                 value={formData.price}
                 onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
-                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white font-mono focus:outline-none focus:border-cyan-500"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white font-mono focus:outline-none focus:border-cyan-500"
               />
             </div>
 
             <div className="space-y-1">
-              <label className="font-mono text-neutral-300">Category *</label>
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Category *</label>
               <select
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value as ProductCategory })}
-                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
               >
                 {CATEGORIES.filter((c) => c !== 'All').map((c) => (
                   <option key={c} value={c}>
@@ -266,13 +266,13 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="font-mono text-neutral-300">Material</label>
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Material</label>
               <input
                 type="text"
                 value={formData.material}
                 onChange={(e) => setFormData({ ...formData, material: e.target.value })}
                 placeholder="e.g. PLA, PETG, ABS, Resin"
-                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
               />
             </div>
           </div>
@@ -280,22 +280,22 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           {/* Row 3: Dimensions & 3D Interactive Viewer Model */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="font-mono text-neutral-300">Dimensions</label>
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Dimensions</label>
               <input
                 type="text"
                 value={formData.dimensions}
                 onChange={(e) => setFormData({ ...formData, dimensions: e.target.value })}
                 placeholder="e.g. 100 x 100 x 50 mm"
-                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
               />
             </div>
 
             <div className="space-y-1">
-              <label className="font-mono text-neutral-300">3D Interactive Viewer Model</label>
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">3D Interactive Viewer Model</label>
               <select
                 value={formData.model_type}
                 onChange={(e) => setFormData({ ...formData, model_type: e.target.value as any })}
-                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500 font-mono"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500 font-mono"
               >
                 <option value="mesh_stand">Articulated Stand Geometry</option>
                 <option value="mesh_keychain">Keychain / Monogram Mesh</option>
@@ -325,7 +325,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowManualUrl(!showManualUrl)}
-                className="text-neutral-400 hover:text-cyan-400 flex items-center gap-1 font-mono transition-colors cursor-pointer"
+                className="text-slate-500 dark:text-neutral-400 hover:text-cyan-600 dark:hover:text-cyan-400 flex items-center gap-1 font-mono transition-colors cursor-pointer"
               >
                 <LinkIcon className="w-3 h-3" />
                 {showManualUrl ? 'Hide Custom Image URL' : 'Provide Custom Image URL'}
@@ -333,8 +333,8 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
 
             {showManualUrl && (
-              <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl space-y-2 text-xs animate-in fade-in">
-                <label className="font-mono text-neutral-300">Custom Image URL</label>
+              <div className="p-3 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl space-y-2 text-xs animate-in fade-in">
+                <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Custom Image URL</label>
                 <input
                   type="url"
                   value={formData.image_url}
@@ -342,7 +342,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                     handleMainImageChange(e.target.value);
                   }}
                   placeholder="https://..."
-                  className="w-full px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-white font-mono focus:outline-none focus:border-cyan-500"
+                  className="w-full px-3 py-2 bg-white dark:bg-neutral-900 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white font-mono focus:outline-none focus:border-cyan-500"
                 />
               </div>
             )}
@@ -350,7 +350,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
           {/* Available Colors Tags */}
           <div className="space-y-2">
-            <label className="font-mono text-neutral-300">Available Colors / Filaments</label>
+            <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Available Colors / Filaments</label>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -363,12 +363,12 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                   }
                 }}
                 placeholder="Add color (e.g. Matte Black, Red, White)..."
-                className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+                className="flex-1 px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
               />
               <button
                 type="button"
                 onClick={handleAddColor}
-                className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg flex items-center gap-1 font-mono"
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-white border border-slate-300 dark:border-neutral-700 rounded-lg flex items-center gap-1 font-mono cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" /> Add
               </button>
@@ -378,13 +378,13 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               {formData.available_colors.map((color) => (
                 <span
                   key={color}
-                  className="px-2.5 py-1 bg-neutral-800 text-neutral-200 rounded-md flex items-center gap-1.5 border border-neutral-700 font-mono text-[11px]"
+                  className="px-2.5 py-1 bg-slate-100 dark:bg-neutral-800 text-slate-800 dark:text-neutral-200 rounded-md flex items-center gap-1.5 border border-slate-300 dark:border-neutral-700 font-mono text-[11px]"
                 >
                   {color}
                   <button
                     type="button"
                     onClick={() => handleRemoveColor(color)}
-                    className="hover:text-rose-400"
+                    className="hover:text-rose-500 cursor-pointer"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -394,15 +394,15 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           </div>
 
           {/* Availability & Featured Toggles */}
-          <div className="pt-2 flex flex-wrap gap-6 border-t border-neutral-800">
+          <div className="pt-2 flex flex-wrap gap-6 border-t border-slate-200 dark:border-neutral-800">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={formData.is_available}
                 onChange={(e) => setFormData({ ...formData, is_available: e.target.checked })}
-                className="w-4 h-4 rounded bg-neutral-950 border-neutral-700 text-cyan-500 focus:ring-0"
+                className="w-4 h-4 rounded bg-slate-100 dark:bg-neutral-950 border-slate-300 dark:border-neutral-700 text-cyan-500 focus:ring-0"
               />
-              <span className="text-neutral-200 font-medium">In Stock / Available for Order</span>
+              <span className="text-slate-800 dark:text-neutral-200 font-medium">In Stock / Available for Order</span>
             </label>
 
             <label className="flex items-center gap-2 cursor-pointer">
@@ -410,25 +410,25 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 type="checkbox"
                 checked={formData.is_featured}
                 onChange={(e) => setFormData({ ...formData, is_featured: e.target.checked })}
-                className="w-4 h-4 rounded bg-neutral-950 border-neutral-700 text-amber-500 focus:ring-0"
+                className="w-4 h-4 rounded bg-slate-100 dark:bg-neutral-950 border-slate-300 dark:border-neutral-700 text-amber-500 focus:ring-0"
               />
-              <span className="text-neutral-200 font-medium">Feature on Homepage</span>
+              <span className="text-slate-800 dark:text-neutral-200 font-medium">Feature on Homepage</span>
             </label>
           </div>
 
           {/* Footer Submit */}
-          <div className="pt-4 border-t border-neutral-800 flex justify-end gap-2">
+          <div className="pt-4 border-t border-slate-200 dark:border-neutral-800 flex justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl font-medium"
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-300 border border-slate-300 dark:border-neutral-700 rounded-xl font-medium cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSaving}
-              className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:opacity-95 text-white font-semibold rounded-xl flex items-center gap-2 shadow-lg shadow-cyan-500/20 disabled:opacity-50"
+              className="px-5 py-2 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold rounded-xl flex items-center gap-2 shadow-lg shadow-cyan-500/20 disabled:opacity-50 cursor-pointer"
             >
               {isSaving ? 'Saving...' : initialProduct ? 'Save Changes' : 'Create Product'}
             </button>

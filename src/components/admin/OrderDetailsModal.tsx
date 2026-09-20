@@ -102,36 +102,36 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95">
+      <div className="bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95">
         {/* Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-neutral-800 flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-neutral-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-neutral-800 rounded-xl">
-              <Box className="w-5 h-5 text-cyan-400" />
+            <div className="p-2 bg-slate-100 dark:bg-neutral-800 rounded-xl">
+              <Box className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-display font-bold text-lg text-white font-mono">{order.order_number}</h2>
+                <h2 className="font-display font-bold text-lg text-slate-900 dark:text-white font-mono">{order.order_number}</h2>
                 <StatusBadge status={order.order_status} type="order" size="sm" />
                 {payment?.payment_status && (
                   <StatusBadge status={payment.payment_status} type="payment" size="sm" />
                 )}
               </div>
-              <span className="text-xs text-neutral-400">
+              <span className="text-xs text-slate-500 dark:text-neutral-400">
                 Created on {new Date(order.created_at).toLocaleString('en-IN')}
               </span>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:text-neutral-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 text-xs flex-1">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 text-xs flex-1 text-slate-800 dark:text-neutral-200">
           {/* Quick Action Verification Banner if Pending */}
           {isPendingVerification && (
             <div className="p-4 rounded-xl bg-cyan-950/40 border border-cyan-500/30 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
@@ -249,16 +249,16 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
           )}
 
           {/* AI PAYMENT PROOF OCR INSPECTION SECTION (Section 62 & 63) */}
-          <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 sm:p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+          <div className="bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl p-4 sm:p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-neutral-800 pb-3">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400" />
-                <h3 className="font-mono text-xs uppercase tracking-wider text-white font-bold">
+                <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                <h3 className="font-mono text-xs uppercase tracking-wider text-slate-900 dark:text-white font-bold">
                   AI Payment OCR & Verification Inspector
                 </h3>
               </div>
               {hasOcr && (
-                <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-[10px] font-mono">
+                <span className="px-2 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/30 text-[10px] font-mono">
                   OCR Confidence: {Math.round((payment?.ocr_confidence || 0.9) * 100)}%
                 </span>
               )}
@@ -268,11 +268,11 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
               {/* Screenshot Preview */}
               <div className="md:col-span-5 space-y-2">
-                <span className="text-[11px] font-mono text-neutral-400 block uppercase">
+                <span className="text-[11px] font-mono text-slate-500 dark:text-neutral-400 block uppercase">
                   Uploaded Payment Screenshot
                 </span>
                 {payment?.screenshot_url ? (
-                  <div className="relative group rounded-xl border border-neutral-800 overflow-hidden bg-black/60">
+                  <div className="relative group rounded-xl border border-slate-300 dark:border-neutral-800 overflow-hidden bg-slate-100 dark:bg-black/60">
                     <img
                       src={payment.screenshot_url}
                       alt="Customer payment proof"
@@ -281,13 +281,13 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                     />
                     <button
                       onClick={() => setShowScreenshotEnlarged(true)}
-                      className="absolute bottom-2 right-2 px-2 py-1 bg-black/80 backdrop-blur-md rounded-lg text-[10px] font-mono text-white flex items-center gap-1 border border-neutral-700"
+                      className="absolute bottom-2 right-2 px-2 py-1 bg-black/80 backdrop-blur-md rounded-lg text-[10px] font-mono text-white flex items-center gap-1 border border-neutral-700 cursor-pointer"
                     >
                       <Eye className="w-3 h-3 text-cyan-400" /> Enlarge Full Size
                     </button>
                   </div>
                 ) : (
-                  <div className="p-6 rounded-xl border border-neutral-800 bg-neutral-900/50 text-center text-neutral-500 font-mono text-xs">
+                  <div className="p-6 rounded-xl border border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 text-center text-slate-400 dark:text-neutral-500 font-mono text-xs">
                     No image file uploaded.
                     <br />
                     Submitted via UTR ID only.
@@ -297,61 +297,61 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
 
               {/* Expected vs Detected Comparison Grid */}
               <div className="md:col-span-7 space-y-3">
-                <span className="text-[11px] font-mono text-neutral-400 block uppercase">
+                <span className="text-[11px] font-mono text-slate-500 dark:text-neutral-400 block uppercase">
                   Verification Field Match Checklist
                 </span>
 
                 <div className="space-y-2 text-xs">
                   {/* Field 1: UPI ID */}
-                  <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-between">
+                  <div className="p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 flex items-center justify-between shadow-sm">
                     <div className="space-y-0.5">
-                      <span className="text-[10px] font-mono uppercase text-neutral-400">Receiver UPI ID</span>
-                      <div className="font-mono text-white text-xs">
+                      <span className="text-[10px] font-mono uppercase text-slate-400 dark:text-neutral-400">Receiver UPI ID</span>
+                      <div className="font-mono text-slate-900 dark:text-white text-xs">
                         {detectedUpi || 'Not specified'}
                       </div>
-                      <span className="text-[10px] text-neutral-500 font-mono">Expected: {expectedUpi}</span>
+                      <span className="text-[10px] text-slate-400 dark:text-neutral-500 font-mono">Expected: {expectedUpi}</span>
                     </div>
                     {payment?.upi_match ?? true ? (
-                      <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
+                      <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
                         <Check className="w-3 h-3" /> MATCHED
                       </span>
                     ) : (
-                      <span className="px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
+                      <span className="px-2 py-1 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" /> MISMATCH
                       </span>
                     )}
                   </div>
 
                   {/* Field 2: Amount Paid */}
-                  <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-between">
+                  <div className="p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 flex items-center justify-between shadow-sm">
                     <div className="space-y-0.5">
-                      <span className="text-[10px] font-mono uppercase text-neutral-400">Amount Paid</span>
-                      <div className="font-mono text-cyan-400 font-bold text-sm">
+                      <span className="text-[10px] font-mono uppercase text-slate-400 dark:text-neutral-400">Amount Paid</span>
+                      <div className="font-mono text-cyan-600 dark:text-cyan-400 font-bold text-sm">
                         {formatINR(detectedAmt || order.total_amount)}
                       </div>
-                      <span className="text-[10px] text-neutral-500 font-mono">Expected: {formatINR(order.total_amount)}</span>
+                      <span className="text-[10px] text-slate-400 dark:text-neutral-500 font-mono">Expected: {formatINR(order.total_amount)}</span>
                     </div>
                     {payment?.amount_match ?? true ? (
-                      <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
+                      <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
                         <Check className="w-3 h-3" /> MATCHED
                       </span>
                     ) : (
-                      <span className="px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
+                      <span className="px-2 py-1 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" /> MISMATCH
                       </span>
                     )}
                   </div>
 
                   {/* Field 3: Transaction ID / UTR */}
-                  <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-between">
+                  <div className="p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 flex items-center justify-between shadow-sm">
                     <div className="space-y-0.5">
-                      <span className="text-[10px] font-mono uppercase text-neutral-400">Transaction ID / UTR</span>
-                      <div className="font-mono text-indigo-300 font-bold text-xs flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono uppercase text-slate-400 dark:text-neutral-400">Transaction ID / UTR</span>
+                      <div className="font-mono text-indigo-600 dark:text-indigo-300 font-bold text-xs flex items-center gap-1.5">
                         <span>{detectedTx || 'Not detected'}</span>
                         {detectedTx && (
                           <button
                             onClick={() => copyToClipboard(detectedTx, 'UTR')}
-                            className="p-1 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white"
+                            className="p-1 hover:bg-slate-100 dark:hover:bg-neutral-800 rounded text-slate-400 hover:text-slate-700 dark:text-neutral-400 dark:hover:text-white"
                             title="Copy UTR"
                           >
                             <Copy className="w-3 h-3" />
@@ -360,30 +360,30 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                       </div>
                     </div>
                     {detectedTx ? (
-                      <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
+                      <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
                         <Check className="w-3 h-3" /> DETECTED
                       </span>
                     ) : (
-                      <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
+                      <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[10px] font-mono font-semibold flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" /> MISSING
                       </span>
                     )}
                   </div>
 
                   {/* Field 4: Detected Payment Status */}
-                  <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-between">
+                  <div className="p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 flex items-center justify-between shadow-sm">
                     <div className="space-y-0.5">
-                      <span className="text-[10px] font-mono uppercase text-neutral-400">Screenshot Status</span>
-                      <div className="font-mono text-white text-xs">
+                      <span className="text-[10px] font-mono uppercase text-slate-400 dark:text-neutral-400">Screenshot Status</span>
+                      <div className="font-mono text-slate-900 dark:text-white text-xs">
                         {payment?.detected_payment_status || 'SUCCESS'}
                       </div>
                       {payment?.payment_date && (
-                        <span className="text-[10px] text-neutral-500 font-mono">
+                        <span className="text-[10px] text-slate-400 dark:text-neutral-500 font-mono">
                           {payment.payment_date} {payment.payment_time ? `at ${payment.payment_time}` : ''}
                         </span>
                       )}
                     </div>
-                    <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-semibold">
+                    <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-semibold">
                       {payment?.detected_payment_status || 'SUCCESS'}
                     </span>
                   </div>
@@ -391,11 +391,11 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
 
                 {/* Fraud / Duplicate Risk Warnings */}
                 {payment?.is_duplicate_transaction && (
-                  <div className="p-3 rounded-lg bg-rose-950/70 border border-rose-500 text-rose-200 flex items-start gap-2">
-                    <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/70 border border-rose-300 dark:border-rose-500 text-rose-800 dark:text-rose-200 flex items-start gap-2 shadow-sm">
+                    <AlertOctagon className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                     <div>
-                      <span className="font-bold block text-rose-100">DUPLICATE TRANSACTION DETECTED</span>
-                      <span className="text-[11px] text-rose-300">
+                      <span className="font-bold block text-rose-900 dark:text-rose-100">DUPLICATE TRANSACTION DETECTED</span>
+                      <span className="text-[11px] text-rose-700 dark:text-rose-300">
                         This Transaction ID was already submitted in Order {payment.duplicate_order_number || 'previous order'}. Please verify your bank statement carefully.
                       </span>
                     </div>
@@ -404,8 +404,8 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
 
                 {/* Admin notes if present */}
                 {payment?.admin_notes && (
-                  <div className="p-2.5 bg-neutral-900 rounded-lg border border-neutral-800 text-[11px] text-neutral-300">
-                    <span className="font-mono text-neutral-400 uppercase text-[10px] block">Admin Review Note:</span>
+                  <div className="p-2.5 bg-white dark:bg-neutral-900 rounded-lg border border-slate-200 dark:border-neutral-800 text-[11px] text-slate-700 dark:text-neutral-300 shadow-sm">
+                    <span className="font-mono text-slate-400 dark:text-neutral-400 uppercase text-[10px] block">Admin Review Note:</span>
                     {payment.admin_notes}
                   </div>
                 )}
@@ -416,36 +416,36 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
           {/* Grid Layout: Customer & 3D Product info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Customer Details */}
-            <div className="bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-4 space-y-3">
-              <h3 className="font-mono text-[11px] uppercase tracking-wider text-neutral-400 font-semibold flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-cyan-400" /> Customer Information
+            <div className="bg-slate-50 dark:bg-neutral-950/70 border border-slate-200 dark:border-neutral-800/80 rounded-xl p-4 space-y-3">
+              <h3 className="font-mono text-[11px] uppercase tracking-wider text-slate-500 dark:text-neutral-400 font-semibold flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Customer Information
               </h3>
               <div className="space-y-2 text-xs">
-                <div className="flex justify-between border-b border-neutral-800/60 pb-1.5">
-                  <span className="text-neutral-400">Name:</span>
-                  <span className="font-semibold text-white">{order.customer?.name || 'N/A'}</span>
+                <div className="flex justify-between border-b border-slate-200 dark:border-neutral-800/60 pb-1.5">
+                  <span className="text-slate-500 dark:text-neutral-400">Name:</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{order.customer?.name || 'N/A'}</span>
                 </div>
-                <div className="flex justify-between border-b border-neutral-800/60 pb-1.5">
-                  <span className="text-neutral-400">Phone:</span>
-                  <a href={`tel:${order.customer?.phone}`} className="font-mono text-cyan-300 hover:underline">
+                <div className="flex justify-between border-b border-slate-200 dark:border-neutral-800/60 pb-1.5">
+                  <span className="text-slate-500 dark:text-neutral-400">Phone:</span>
+                  <a href={`tel:${order.customer?.phone}`} className="font-mono text-cyan-600 dark:text-cyan-300 hover:underline">
                     {order.customer?.phone || 'N/A'}
                   </a>
                 </div>
                 {order.customer?.email && (
-                  <div className="flex justify-between border-b border-neutral-800/60 pb-1.5">
-                    <span className="text-neutral-400">Email:</span>
-                    <span className="text-neutral-200 truncate">{order.customer?.email}</span>
+                  <div className="flex justify-between border-b border-slate-200 dark:border-neutral-800/60 pb-1.5">
+                    <span className="text-slate-500 dark:text-neutral-400">Email:</span>
+                    <span className="text-slate-800 dark:text-neutral-200 truncate">{order.customer?.email}</span>
                   </div>
                 )}
                 {order.customer?.college && (
-                  <div className="flex justify-between border-b border-neutral-800/60 pb-1.5">
-                    <span className="text-neutral-400">College/Org:</span>
-                    <span className="text-neutral-200">{order.customer?.college}</span>
+                  <div className="flex justify-between border-b border-slate-200 dark:border-neutral-800/60 pb-1.5">
+                    <span className="text-slate-500 dark:text-neutral-400">College/Org:</span>
+                    <span className="text-slate-800 dark:text-neutral-200">{order.customer?.college}</span>
                   </div>
                 )}
                 <div className="pt-1">
-                  <span className="text-neutral-400 block mb-1">Delivery / Stall Address:</span>
-                  <p className="text-neutral-200 leading-relaxed bg-neutral-900 p-2 rounded-lg border border-neutral-800">
+                  <span className="text-slate-500 dark:text-neutral-400 block mb-1">Delivery / Stall Address:</span>
+                  <p className="text-slate-800 dark:text-neutral-200 leading-relaxed bg-white dark:bg-neutral-900 p-2 rounded-lg border border-slate-200 dark:border-neutral-800 shadow-sm">
                     {order.customer?.address}, {order.customer?.city}{' '}
                     {order.customer?.pincode ? `- ${order.customer.pincode}` : ''}
                   </p>
@@ -454,51 +454,51 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
             </div>
 
             {/* Product & Customization */}
-            <div className="bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-4 space-y-3">
-              <h3 className="font-mono text-[11px] uppercase tracking-wider text-neutral-400 font-semibold flex items-center gap-1.5">
-                <Box className="w-3.5 h-3.5 text-indigo-400" /> 3D Print Product Details
+            <div className="bg-slate-50 dark:bg-neutral-950/70 border border-slate-200 dark:border-neutral-800/80 rounded-xl p-4 space-y-3">
+              <h3 className="font-mono text-[11px] uppercase tracking-wider text-slate-500 dark:text-neutral-400 font-semibold flex items-center gap-1.5">
+                <Box className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> 3D Print Product Details
               </h3>
               <div className="space-y-2 text-xs">
-                <div className="flex justify-between border-b border-neutral-800/60 pb-1.5">
-                  <span className="text-neutral-400">Product:</span>
-                  <span className="font-semibold text-white truncate max-w-[180px]">
+                <div className="flex justify-between border-b border-slate-200 dark:border-neutral-800/60 pb-1.5">
+                  <span className="text-slate-500 dark:text-neutral-400">Product:</span>
+                  <span className="font-semibold text-slate-900 dark:text-white truncate max-w-[180px]">
                     {order.product?.name || '3D Model'}
                   </span>
                 </div>
-                <div className="flex justify-between border-b border-neutral-800/60 pb-1.5">
-                  <span className="text-neutral-400">Quantity:</span>
-                  <span className="font-mono text-white font-semibold">{order.quantity} units</span>
+                <div className="flex justify-between border-b border-slate-200 dark:border-neutral-800/60 pb-1.5">
+                  <span className="text-slate-500 dark:text-neutral-400">Quantity:</span>
+                  <span className="font-mono text-slate-900 dark:text-white font-semibold">{order.quantity} units</span>
                 </div>
-                <div className="flex justify-between border-b border-neutral-800/60 pb-1.5">
-                  <span className="text-neutral-400">Unit Price:</span>
-                  <span className="font-mono text-neutral-300">{formatINR(order.unit_price)}</span>
+                <div className="flex justify-between border-b border-slate-200 dark:border-neutral-800/60 pb-1.5">
+                  <span className="text-slate-500 dark:text-neutral-400">Unit Price:</span>
+                  <span className="font-mono text-slate-700 dark:text-neutral-300">{formatINR(order.unit_price)}</span>
                 </div>
-                <div className="flex justify-between border-b border-neutral-800/60 pb-1.5 font-bold">
-                  <span className="text-neutral-300">Total Amount:</span>
-                  <span className="font-mono text-cyan-400 text-sm">{formatINR(order.total_amount)}</span>
+                <div className="flex justify-between border-b border-slate-200 dark:border-neutral-800/60 pb-1.5 font-bold">
+                  <span className="text-slate-700 dark:text-neutral-300">Total Amount:</span>
+                  <span className="font-mono text-cyan-600 dark:text-cyan-400 text-sm">{formatINR(order.total_amount)}</span>
                 </div>
 
                 {/* Customizations */}
                 {order.customization && (
-                  <div className="pt-1 space-y-1 bg-neutral-900 p-2.5 rounded-lg border border-neutral-800">
-                    <span className="text-[10px] font-mono text-neutral-400 uppercase">Print Customization</span>
+                  <div className="pt-1 space-y-1 bg-white dark:bg-neutral-900 p-2.5 rounded-lg border border-slate-200 dark:border-neutral-800 shadow-sm">
+                    <span className="text-[10px] font-mono text-slate-400 dark:text-neutral-400 uppercase">Print Customization</span>
                     {order.customization.customText && (
                       <div className="text-xs">
-                        <span className="text-neutral-400">Text: </span>
-                        <span className="font-mono text-cyan-300 font-semibold">
+                        <span className="text-slate-500 dark:text-neutral-400">Text: </span>
+                        <span className="font-mono text-cyan-600 dark:text-cyan-300 font-semibold">
                           {order.customization.customText}
                         </span>
                       </div>
                     )}
                     {order.customization.selectedColor && (
                       <div className="text-xs">
-                        <span className="text-neutral-400">Color: </span>
-                        <span className="text-white font-medium">{order.customization.selectedColor}</span>
+                        <span className="text-slate-500 dark:text-neutral-400">Color: </span>
+                        <span className="text-slate-900 dark:text-white font-medium">{order.customization.selectedColor}</span>
                       </div>
                     )}
                     {order.customization.specialInstructions && (
-                      <div className="text-[11px] text-neutral-300 mt-1">
-                        <span className="text-neutral-400">Note: </span>
+                      <div className="text-[11px] text-slate-700 dark:text-neutral-300 mt-1">
+                        <span className="text-slate-500 dark:text-neutral-400">Note: </span>
                         {order.customization.specialInstructions}
                       </div>
                     )}
@@ -509,8 +509,8 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
           </div>
 
           {/* Order Status Stepper Actions */}
-          <div className="bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-5 space-y-3">
-            <h3 className="font-mono text-[11px] uppercase tracking-wider text-neutral-400 font-semibold">
+          <div className="bg-slate-50 dark:bg-neutral-950/70 border border-slate-200 dark:border-neutral-800/80 rounded-xl p-5 space-y-3">
+            <h3 className="font-mono text-[11px] uppercase tracking-wider text-slate-500 dark:text-neutral-400 font-semibold">
               3D Print Workshop Production Workflow
             </h3>
 
@@ -518,59 +518,59 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
               <button
                 disabled={order.order_status === 'PRINTING' || isProcessing}
                 onClick={() => handleStatusChange('PRINTING')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                   order.order_status === 'PRINTING'
-                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+                    ? 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/40'
+                    : 'bg-white hover:bg-slate-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-neutral-200 border border-slate-300 dark:border-neutral-700 shadow-sm'
                 }`}
               >
-                <Printer className="w-3.5 h-3.5 text-indigo-400" /> Start 3D Printing
+                <Printer className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> Start 3D Printing
               </button>
 
               <button
                 disabled={order.order_status === 'READY_FOR_PICKUP' || isProcessing}
                 onClick={() => handleStatusChange('READY_FOR_PICKUP')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                   order.order_status === 'READY_FOR_PICKUP'
-                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+                    ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/40'
+                    : 'bg-white hover:bg-slate-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-neutral-200 border border-slate-300 dark:border-neutral-700 shadow-sm'
                 }`}
               >
-                <PackageCheck className="w-3.5 h-3.5 text-blue-400" /> Mark Ready for Pickup
+                <PackageCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /> Mark Ready for Pickup
               </button>
 
               <button
                 disabled={order.order_status === 'COMPLETED' || isProcessing}
                 onClick={() => handleStatusChange('COMPLETED')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                   order.order_status === 'COMPLETED'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+                    ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40'
+                    : 'bg-white hover:bg-slate-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-neutral-200 border border-slate-300 dark:border-neutral-700 shadow-sm'
                 }`}
               >
-                <Check className="w-3.5 h-3.5 text-emerald-400" /> Mark Completed / Delivered
+                <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Mark Completed / Delivered
               </button>
 
               <button
                 disabled={order.order_status === 'CANCELLED' || isProcessing}
                 onClick={() => handleStatusChange('CANCELLED')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                   order.order_status === 'CANCELLED'
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                    : 'bg-neutral-900 hover:bg-rose-950/60 text-neutral-400 hover:text-rose-300 border border-neutral-800'
+                    ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/40'
+                    : 'bg-white hover:bg-rose-50 dark:bg-neutral-900 dark:hover:bg-rose-950/60 text-slate-600 hover:text-rose-700 dark:text-neutral-400 dark:hover:text-rose-300 border border-slate-300 dark:border-neutral-800 shadow-sm'
                 }`}
               >
-                <XCircle className="w-3.5 h-3.5" /> Cancel Order
+                <XCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> Cancel Order
               </button>
             </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-neutral-800 flex justify-end">
+        <div className="p-4 border-t border-slate-200 dark:border-neutral-800 flex justify-end">
           <button
             onClick={onClose}
-            className="px-5 py-2 bg-neutral-800 hover:bg-neutral-700 text-white font-medium rounded-xl text-xs"
+            className="px-5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-800 dark:text-white font-medium rounded-xl text-xs border border-slate-300 dark:border-neutral-700 cursor-pointer transition-colors shadow-sm"
           >
             Close Inspector
           </button>

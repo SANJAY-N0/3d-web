@@ -20,19 +20,34 @@ function normalizeProduct(p: any): Product {
   };
 }
 
+function isFakeProduct(p: any): boolean {
+  if (!p || !p.name) return true;
+  const name = p.name.trim().toLowerCase();
+  if (name === 'nothing' || name === 'test' || name === 'dummy') return true;
+  if (p.description && p.description.includes('lksnfoadfnfasnfpa')) return true;
+  if (p.main_image && (p.main_image.includes('Screenshot') || p.main_image.includes('Ishan') || p.main_image.includes('26,200'))) return true;
+  if (p.image_url && (p.image_url.includes('Screenshot') || p.image_url.includes('Ishan') || p.image_url.includes('26,200'))) return true;
+  return false;
+}
+
 function getLocalProducts(): Product[] {
   try {
     const raw = localStorage.getItem(PRODUCTS_STORAGE_KEY);
     if (!raw) return [];
     const parsed: any[] = JSON.parse(raw);
-    return parsed.map(normalizeProduct);
+    const cleaned = parsed.filter((p) => !isFakeProduct(p)).map(normalizeProduct);
+    if (cleaned.length !== parsed.length) {
+      saveLocalProducts(cleaned);
+    }
+    return cleaned;
   } catch {
     return [];
   }
 }
 
 function saveLocalProducts(products: Product[]): void {
-  localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(products));
+  const cleaned = products.filter((p) => !isFakeProduct(p));
+  localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(cleaned));
 }
 
 export const productService = {
@@ -53,7 +68,7 @@ export const productService = {
         }
 
         // Return real data from Supabase (empty array if none exist)
-        const products = (data || []).map(normalizeProduct);
+        const products = (data || []).map(normalizeProduct).filter((p) => !isFakeProduct(p));
         saveLocalProducts(products);
         return products;
       } catch (err) {

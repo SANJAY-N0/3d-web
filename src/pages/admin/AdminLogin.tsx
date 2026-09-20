@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authService } from '../../services/authService';
-import { Box, Lock, Mail, ShieldCheck, ArrowRight, Sparkles, Key } from 'lucide-react';
+import { Box, Lock, Mail, ShieldCheck, ArrowRight, Sparkles, Key, Sun, Moon } from 'lucide-react';
 import { useToast } from '../../components/common/Toast';
+import { useTheme } from '../../context/ThemeContext';
 
 export const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { theme, toggleTheme } = useTheme();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,7 +39,24 @@ export const AdminLogin: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center px-4 py-12 bg-slate-50 dark:bg-neutral-950 transition-colors">
+    <div className="min-h-[80vh] flex items-center justify-center px-4 py-12 bg-slate-50 dark:bg-neutral-950 transition-colors relative">
+      {/* Top right theme toggle */}
+      <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="p-2.5 rounded-xl border border-slate-300 dark:border-neutral-800 bg-white hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center justify-center shadow-sm"
+          title={theme === 'light' ? 'Switch to Dark Mode (🌙)' : 'Switch to Light Mode (☀️)'}
+          aria-label={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+        >
+          {theme === 'light' ? (
+            <Sun className="w-4 h-4 text-amber-500 animate-in spin-in-180" />
+          ) : (
+            <Moon className="w-4 h-4 text-cyan-400 animate-in spin-in-180" />
+          )}
+        </button>
+      </div>
+
       <div className="w-full max-w-md bg-white dark:bg-neutral-900/90 border border-slate-200 dark:border-neutral-800 rounded-3xl p-8 space-y-8 shadow-sm dark:shadow-2xl relative overflow-hidden">
         {/* Top glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-24 bg-cyan-500/10 blur-3xl pointer-events-none" />

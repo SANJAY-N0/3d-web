@@ -5,17 +5,36 @@ import { productService } from './productService';
 
 const ORDERS_STORAGE_KEY = 'printlab_orders_data_v1';
 
+const FAKE_ORDER_NUMBERS = new Set(['3DP-2026-00124', '3DP-2026-00125', '3DP-2026-00126']);
+const FAKE_CUSTOMER_NAMES = new Set(['sanjay kumar', 'priya sharma', 'aditya varma']);
+
+function isFakeOrder(o: any): boolean {
+  if (!o) return true;
+  if (o.order_number && FAKE_ORDER_NUMBERS.has(o.order_number.toUpperCase())) return true;
+  if (o.customer?.name && FAKE_CUSTOMER_NAMES.has(o.customer.name.trim().toLowerCase())) return true;
+  if (o.product?.name && o.product.name.trim().toLowerCase() === 'nothing') return true;
+  if (o.product_id === 'nothing' || o.id === 'nothing') return true;
+  return false;
+}
+
 function getLocalOrders(): Order[] {
   try {
     const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed: any[] = JSON.parse(raw);
+    const cleaned = parsed.filter((o) => !isFakeOrder(o)).map(normalizeOrder);
+    if (cleaned.length !== parsed.length) {
+      saveLocalOrders(cleaned);
+    }
+    return cleaned;
   } catch {
     return [];
   }
 }
 
 function saveLocalOrders(orders: Order[]): void {
-  localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  const cleaned = orders.filter((o) => !isFakeOrder(o));
+  localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(cleaned));
 }
 
 function normalizeOrder(o: any): Order {
@@ -47,7 +66,7 @@ export const orderService = {
           throw error;
         }
 
-        const normalized = (data || []).map(normalizeOrder);
+        const normalized = (data || []).map(normalizeOrder).filter((o) => !isFakeOrder(o));
         saveLocalOrders(normalized);
         return normalized;
       } catch (err) {
@@ -221,6 +240,22 @@ export const orderService = {
     };
     saveLocalOrders(current);
     return current[index];
+  },
+
+  /**
+   * Delete an order
+   */
+  async delete(orderId: string): Promise<void> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('orders').delete().eq('id', orderId);
+      } catch (err) {
+        console.warn('Supabase order delete error:', err);
+      }
+    }
+    const current = getLocalOrders();
+    const filtered = current.filter((o) => o.id !== orderId && o.order_number !== orderId);
+    saveLocalOrders(filtered);
   },
 
   /**
