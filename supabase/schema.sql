@@ -126,11 +126,23 @@ CREATE TABLE IF NOT EXISTS payments (
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS admins (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
   name TEXT,
   role TEXT NOT NULL DEFAULT 'admin',
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Safe migration to ensure auth_user_id exists if table was created previously without it
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'admins' AND column_name = 'auth_user_id'
+  ) THEN
+    ALTER TABLE admins ADD COLUMN auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 -- ==========================================================
 -- 6. SETTINGS TABLE
@@ -158,6 +170,8 @@ CREATE INDEX IF NOT EXISTS idx_orders_expires_at ON orders(payment_session_expir
 CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_transaction_id ON payments(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(payment_status);
+CREATE INDEX IF NOT EXISTS idx_admins_email ON admins(email);
+CREATE INDEX IF NOT EXISTS idx_admins_auth_user_id ON admins(auth_user_id);
 
 -- ==========================================================
 -- 8. ROW LEVEL SECURITY (RLS) POLICIES
@@ -169,109 +183,190 @@ ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 
--- Helper function: Check if current user is an admin
+-- Helper function: Check if current authenticated user is a verified administrator
 CREATE OR REPLACE FUNCTION is_admin() 
 RETURNS BOOLEAN AS $$
 BEGIN
-  RETURN (
-    EXISTS (
-      SELECT 1 FROM admins 
-      WHERE admins.email = auth.jwt() ->> 'email'
-    ) 
-    OR (auth.jwt() ->> 'role' = 'admin')
-    OR (auth.jwt() -> 'app_metadata' ->> 'role' = 'admin')
+  RETURN EXISTS (
+    SELECT 1 FROM admins 
+    WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+    AND admins.role = 'admin'
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 8.1 PRODUCTS POLICIES
--- Everyone can read products catalog
+-- Public and all customers can read the products catalog
+DROP POLICY IF EXISTS "Public products are viewable by everyone" ON products;
 CREATE POLICY "Public products are viewable by everyone" 
-  ON products FOR SELECT USING (true);
+  ON products FOR SELECT 
+  USING (true);
 
--- Only authenticated admins can modify products
+-- Only verified authenticated admins can insert products
+DROP POLICY IF EXISTS "Admins can insert products" ON products;
 CREATE POLICY "Admins can insert products" 
-  ON products FOR INSERT WITH CHECK (is_admin() OR auth.role() = 'authenticated');
+  ON products FOR INSERT 
+  TO authenticated 
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM admins 
+      WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+      AND admins.role = 'admin'
+    )
+  );
 
+-- Only verified authenticated admins can update products
+DROP POLICY IF EXISTS "Admins can update products" ON products;
 CREATE POLICY "Admins can update products" 
-  ON products FOR UPDATE USING (is_admin() OR auth.role() = 'authenticated');
+  ON products FOR UPDATE 
+  TO authenticated 
+  USING (
+    EXISTS (
+      SELECT 1 FROM admins 
+      WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+      AND admins.role = 'admin'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM admins 
+      WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+      AND admins.role = 'admin'
+    )
+  );
 
+-- Only verified authenticated admins can delete products
+DROP POLICY IF EXISTS "Admins can delete products" ON products;
 CREATE POLICY "Admins can delete products" 
-  ON products FOR DELETE USING (is_admin() OR auth.role() = 'authenticated');
+  ON products FOR DELETE 
+  TO authenticated 
+  USING (
+    EXISTS (
+      SELECT 1 FROM admins 
+      WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+      AND admins.role = 'admin'
+    )
+  );
 
 -- 8.2 CUSTOMERS POLICIES
 -- Anyone can create a customer profile during registration or checkout
+DROP POLICY IF EXISTS "Public can register customer profile" ON customers;
 CREATE POLICY "Public can register customer profile" 
   ON customers FOR INSERT WITH CHECK (true);
 
--- Customers can view their own profile; admins can view all
+-- Customers can view only their own profile, admins can view all, or during active payment session
+DROP POLICY IF EXISTS "Customers view own profile or admins view all" ON customers;
 CREATE POLICY "Customers view own profile or admins view all" 
   ON customers FOR SELECT 
   USING (
     (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id)
     OR is_admin()
-    OR auth.role() = 'authenticated'
-    OR true -- Supports guest checkout lookup by phone/email
+    OR id IN (
+      SELECT customer_id FROM orders WHERE order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION') AND payment_session_expires_at > now()
+    )
   );
 
--- Customers can update their own profile; admins can update all
+-- Customers can update only their own profile; admins can update all
+DROP POLICY IF EXISTS "Customers update own profile or admins update all" ON customers;
 CREATE POLICY "Customers update own profile or admins update all" 
   ON customers FOR UPDATE 
   USING (
     (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id)
     OR is_admin()
-    OR auth.role() = 'authenticated'
-    OR true -- Supports checkout details update
   );
 
 -- 8.3 ORDERS POLICIES
--- Public can place orders
+-- Public and customers can place orders
+DROP POLICY IF EXISTS "Public can insert orders" ON orders;
 CREATE POLICY "Public can insert orders" 
   ON orders FOR INSERT WITH CHECK (true);
 
--- Customers can view their own orders; admins can view all
+-- Customers can view only their own orders, admins can view all, or during active payment session
+DROP POLICY IF EXISTS "Customers view own orders or admins view all" ON orders;
 CREATE POLICY "Customers view own orders or admins view all" 
   ON orders FOR SELECT 
   USING (
-    customer_id IN (
+    (auth.uid() IS NOT NULL AND customer_id IN (
       SELECT id FROM customers WHERE auth_user_id = auth.uid()
-    )
+    ))
     OR is_admin()
-    OR auth.role() = 'authenticated'
-    OR true -- Supports direct order confirmation & payment page access
+    OR (order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION') AND payment_session_expires_at > now())
   );
 
--- Public can update order status during checkout/payment session; admins have full access
-CREATE POLICY "Update order status and session" 
-  ON orders FOR UPDATE USING (true);
+-- Only admins can update orders arbitrarily; customers can update pending status during checkout
+DROP POLICY IF EXISTS "Update order status and session" ON orders;
+DROP POLICY IF EXISTS "Admins can update orders" ON orders;
+CREATE POLICY "Admins can update orders" 
+  ON orders FOR UPDATE 
+  USING (is_admin());
+
+DROP POLICY IF EXISTS "Customers can update own pending order status" ON orders;
+CREATE POLICY "Customers can update own pending order status" 
+  ON orders FOR UPDATE 
+  USING (
+    (
+      (auth.uid() IS NOT NULL AND customer_id IN (
+        SELECT id FROM customers WHERE auth_user_id = auth.uid()
+      ))
+      OR (order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION') AND payment_session_expires_at > now())
+    )
+    AND order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION')
+  );
 
 -- 8.4 PAYMENTS POLICIES
 -- Public can submit payment proof for orders
+DROP POLICY IF EXISTS "Public can submit payments" ON payments;
 CREATE POLICY "Public can submit payments" 
   ON payments FOR INSERT WITH CHECK (true);
 
--- Customers and admins can view payment records
+-- Only order owners, admins, or active payment session can view payment records
+DROP POLICY IF EXISTS "View payment records" ON payments;
 CREATE POLICY "View payment records" 
-  ON payments FOR SELECT USING (true);
+  ON payments FOR SELECT 
+  USING (
+    is_admin()
+    OR (auth.uid() IS NOT NULL AND order_id IN (
+      SELECT id FROM orders WHERE customer_id IN (
+        SELECT id FROM customers WHERE auth_user_id = auth.uid()
+      )
+    ))
+    OR order_id IN (
+      SELECT id FROM orders WHERE order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION') AND payment_session_expires_at > now()
+    )
+  );
 
--- Customers can update proof / Admins can verify payments
-CREATE POLICY "Update payment records" 
-  ON payments FOR UPDATE USING (true);
+-- Only verified admins can update/verify payment records
+DROP POLICY IF EXISTS "Update payment records" ON payments;
+DROP POLICY IF EXISTS "Admins can verify and update payments" ON payments;
+CREATE POLICY "Admins can verify and update payments" 
+  ON payments FOR UPDATE 
+  USING (is_admin());
 
 -- 8.5 SETTINGS POLICIES
--- Public can read settings (UPI ID, merchant name, support contacts, Cloudinary)
+-- Public can read public settings (UPI ID, merchant name, support contacts, Cloudinary)
+DROP POLICY IF EXISTS "Public settings are viewable by everyone" ON settings;
 CREATE POLICY "Public settings are viewable by everyone" 
   ON settings FOR SELECT USING (true);
 
 -- Only admins can modify settings
+DROP POLICY IF EXISTS "Admins can manage settings" ON settings;
 CREATE POLICY "Admins can manage settings" 
   ON settings FOR ALL 
-  USING (is_admin() OR auth.role() = 'authenticated');
+  USING (is_admin());
 
 -- 8.6 ADMINS POLICIES
--- Only authenticated users can view admins table
+DROP POLICY IF EXISTS "Admins viewable by authenticated users" ON admins;
 CREATE POLICY "Admins viewable by authenticated users" 
-  ON admins FOR SELECT USING (auth.role() = 'authenticated' OR is_admin());
+  ON admins FOR SELECT 
+  TO authenticated 
+  USING (auth.uid() = auth_user_id OR email = auth.jwt() ->> 'email' OR is_admin());
+
+DROP POLICY IF EXISTS "Admins can update own record" ON admins;
+CREATE POLICY "Admins can update own record" 
+  ON admins FOR UPDATE 
+  TO authenticated 
+  USING (auth.uid() = auth_user_id OR email = auth.jwt() ->> 'email')
+  WITH CHECK (auth.uid() = auth_user_id OR email = auth.jwt() ->> 'email');
 
 -- ==========================================================
 -- 9. STORAGE BUCKETS CONFIGURATION (Supabase Storage)
@@ -283,15 +378,83 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Public access for product images
+DROP POLICY IF EXISTS "Public Access for Product Images" ON storage.objects;
 CREATE POLICY "Public Access for Product Images"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'product-images');
 
--- Authenticated upload for payment screenshots
+-- Public upload for payment screenshots during checkout
+DROP POLICY IF EXISTS "Allow Payment Screenshot Uploads" ON storage.objects;
 CREATE POLICY "Allow Payment Screenshot Uploads"
   ON storage.objects FOR INSERT
   WITH CHECK (bucket_id = 'payment-proofs');
 
+-- Restrict payment screenshot reads to order owners and admins
+DROP POLICY IF EXISTS "Allow Payment Screenshot Reads" ON storage.objects;
 CREATE POLICY "Allow Payment Screenshot Reads"
   ON storage.objects FOR SELECT
-  USING (bucket_id = 'payment-proofs');
+  USING (
+    bucket_id = 'payment-proofs'
+    AND (
+      is_admin()
+      OR (auth.uid() IS NOT NULL AND (storage.foldername(name))[1] IN (
+        SELECT id FROM orders WHERE customer_id IN (
+          SELECT id FROM customers WHERE auth_user_id = auth.uid()
+        )
+      ))
+    )
+  );
+
+-- ==========================================================
+-- 10. HOMEPAGE SHOWCASE TABLE
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS homepage_showcase (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  image_url TEXT NOT NULL,
+  cloudinary_public_id TEXT,
+  title TEXT,
+  subtitle TEXT,
+  button_text TEXT DEFAULT 'Browse Catalog',
+  button_link TEXT DEFAULT '/products',
+  display_order INTEGER DEFAULT 0,
+  display_duration INTEGER DEFAULT 5 CHECK (display_duration >= 2 AND display_duration <= 60),
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Safe migration to ensure display_duration exists if table was previously created
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'homepage_showcase' AND column_name = 'display_duration'
+  ) THEN
+    ALTER TABLE homepage_showcase ADD COLUMN display_duration INTEGER DEFAULT 5 CHECK (display_duration >= 2 AND display_duration <= 60);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_homepage_showcase_active ON homepage_showcase(is_active);
+CREATE INDEX IF NOT EXISTS idx_homepage_showcase_order ON homepage_showcase(display_order);
+
+ALTER TABLE homepage_showcase ENABLE ROW LEVEL SECURITY;
+
+-- Public can view active showcase items
+DROP POLICY IF EXISTS "Public showcase is viewable by everyone" ON homepage_showcase;
+CREATE POLICY "Public showcase is viewable by everyone" 
+  ON homepage_showcase FOR SELECT 
+  USING (true);
+
+-- Only verified admins have access to insert, update, or delete showcase items
+DROP POLICY IF EXISTS "Admins can manage showcase" ON homepage_showcase;
+CREATE POLICY "Admins can manage showcase" 
+  ON homepage_showcase FOR ALL 
+  TO authenticated 
+  USING (
+    EXISTS (
+      SELECT 1 FROM admins 
+      WHERE (admins.auth_user_id = auth.uid() OR (admins.auth_user_id IS NULL AND admins.email = auth.jwt() ->> 'email'))
+      AND admins.role = 'admin'
+    )
+  );
+

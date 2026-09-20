@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { createRequire } from "module";
+import { createClient } from "@supabase/supabase-js";
 
 const require = createRequire(import.meta.url);
 
@@ -14,11 +15,11 @@ dotenv.config({ override: true });
 
 delete process.env.CLOUDINARY_URL;
 
-// Normalize API secret
+// Read credentials strictly from environment variables without hardcoded fallbacks
 function getResolvedCloudinaryCredentials() {
-  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || "jushiok7").trim();
-  const apiKey = (process.env.CLOUDINARY_API_KEY || "873981713524356").trim();
-  let apiSecret = (process.env.CLOUDINARY_API_SECRET || "17qkUtU1PH-KRltAlsM0lC8KCdw").trim();
+  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || "").trim();
+  const apiKey = (process.env.CLOUDINARY_API_KEY || "").trim();
+  let apiSecret = (process.env.CLOUDINARY_API_SECRET || "").trim();
   apiSecret = apiSecret
     .replace(/MOIC8KCdw/g, "M0lC8KCdw")
     .replace(/MOlC8KCdw/g, "M0lC8KCdw")
@@ -60,6 +61,19 @@ function isCloudinaryConfigured(): boolean {
   }
 }
 
+// Supabase Server-Side Client for Token & Role Verification
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+let supabaseServer: any = null;
+
+if (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith("https://")) {
+  try {
+    supabaseServer = createClient(supabaseUrl, supabaseAnonKey);
+  } catch (err) {
+    console.warn("Failed to initialize server-side Supabase client:", err);
+  }
+}
+
 // Lazy Gemini client helper
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
@@ -79,9 +93,22 @@ function getGeminiClient(): GoogleGenAI | null {
 // In-memory registry to track submitted transaction IDs for duplicate detection
 const knownTransactionRegistry = new Map<string, { orderNumber: string; orderId: string; amount: number; date: string }>();
 
+function isUuid(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str).trim());
+}
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+  // Security Headers Middleware
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    next();
+  });
 
   // JSON Body Parser for base64 image uploads (limit 15mb)
   app.use(express.json({ limit: "15mb" }));
@@ -93,24 +120,65 @@ async function startServer() {
       status: "ok",
       timestamp: new Date().toISOString(),
       hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+      hasCloudinary: isCloudinaryConfigured(),
+      hasSupabase: Boolean(supabaseServer),
     });
   });
 
   /**
-   * Backend Authorization Middleware: Enforce administrator permissions
+   * Backend Authorization Middleware: Enforces verified Supabase administrator privileges
    */
-  const requireAdminAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const roleHeader = req.headers["x-user-role"] || req.headers["x-role"];
-    const authHeader = req.headers.authorization;
+  const requireAdminAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({
+          success: false,
+          error: "Authentication required. Missing Bearer token.",
+        });
+      }
 
-    if (roleHeader === "admin" || (authHeader && authHeader.toLowerCase().includes("admin"))) {
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+      if (!supabaseServer) {
+        return res.status(503).json({
+          success: false,
+          error: "Authentication service is unavailable on the server.",
+        });
+      }
+
+      // Verify user JWT token with Supabase Auth
+      const { data: { user }, error: userError } = await supabaseServer.auth.getUser(token);
+      if (userError || !user) {
+        return res.status(401).json({
+          success: false,
+          error: "Invalid or expired administrator token. Please log in again.",
+        });
+      }
+
+      // Verify user exists in the admins table with role = 'admin'
+      const { data: adminRecord, error: adminError } = await supabaseServer
+        .from("admins")
+        .select("id, email, role")
+        .or(`auth_user_id.eq.${user.id},email.eq.${user.email}`)
+        .eq("role", "admin")
+        .maybeSingle();
+
+      if (adminError || !adminRecord) {
+        return res.status(403).json({
+          success: false,
+          error: "Access forbidden. Verified administrator privileges required.",
+        });
+      }
+
+      (req as any).adminUser = user;
       return next();
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: "Internal authentication verification error.",
+      });
     }
-
-    return res.status(403).json({
-      success: false,
-      error: "Access forbidden. Administrator privileges required.",
-    });
   };
 
   /**
@@ -120,6 +188,7 @@ async function startServer() {
     return res.json({
       authorized: true,
       role: "admin",
+      user: (req as any).adminUser ? { id: (req as any).adminUser.id, email: (req as any).adminUser.email } : null,
       timestamp: new Date().toISOString(),
     });
   });
@@ -231,22 +300,691 @@ async function startServer() {
       });
     }
   });
+  /**
+   * Dedicated endpoint to create a new order directly in Supabase
+   * Verifies product, calculates price from DB, finds/upserts customer, generates order number,
+   * inserts order row, creates initial payment row, and returns the real DB record.
+   */
+  app.post("/api/orders/create", async (req, res) => {
+    try {
+      const { customer, customer_id, product_id, quantity = 1, customization = {} } = req.body;
+
+      console.log("==========================================");
+      console.log("TABLE: orders");
+      console.log("OPERATION: CREATE ORDER REQUEST");
+      console.log("REQUEST BODY:", JSON.stringify({ customer_id, product_id, quantity, customization, customer_name: customer?.name }));
+
+      if (!supabaseServer) {
+        console.error("Database service unavailable (supabaseServer is null)");
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      if (!product_id) {
+        return res.status(400).json({ success: false, error: "Product ID is required." });
+      }
+
+      // 1. Verify Product from database (Section 6)
+      const { data: prodRecord, error: prodErr } = await supabaseServer
+        .from("products")
+        .select("*")
+        .eq("id", product_id)
+        .maybeSingle();
+
+      if (prodErr || !prodRecord) {
+        console.error("Product lookup error in DB:", prodErr);
+        return res.status(404).json({ success: false, error: "Product not found in database." });
+      }
+
+      const unitPrice = Number(prodRecord.price);
+      const validatedQty = Math.max(1, Number(quantity) || 1);
+      const totalAmount = unitPrice * validatedQty;
+
+      // 2. Verify / Find / Upsert Customer (Section 5)
+      let resolvedCustomerId = customer_id;
+
+      if (customer) {
+        const cleanPhone = String(customer.phone || "").replace(/\D/g, "").slice(-10);
+        const cleanEmail = String(customer.email || "").trim().toLowerCase();
+
+        let existingCustomer: any = null;
+
+        // Try lookup by auth_user_id if present
+        if (customer.auth_user_id) {
+          const { data: byAuth } = await supabaseServer
+            .from("customers")
+            .select("id")
+            .eq("auth_user_id", customer.auth_user_id)
+            .maybeSingle();
+          if (byAuth) existingCustomer = byAuth;
+        }
+
+        // Try lookup by phone or email
+        if (!existingCustomer && (cleanPhone || cleanEmail)) {
+          let custQuery = supabaseServer.from("customers").select("id, phone, email");
+          if (cleanPhone && cleanEmail) {
+            custQuery = custQuery.or(`phone.eq.${cleanPhone},email.eq.${cleanEmail}`);
+          } else if (cleanPhone) {
+            custQuery = custQuery.eq("phone", cleanPhone);
+          } else if (cleanEmail) {
+            custQuery = custQuery.eq("email", cleanEmail);
+          }
+          const { data: byPhoneOrEmail } = await custQuery.limit(1).maybeSingle();
+          if (byPhoneOrEmail) existingCustomer = byPhoneOrEmail;
+        }
+
+        const customerRow: Record<string, any> = {
+          name: customer.name || "Customer",
+          phone: cleanPhone || customer.phone || "0000000000",
+          email: cleanEmail || customer.email || null,
+          college: customer.college || (customer.college_type === "KPR College" ? "KPR College" : "Other"),
+          college_type: customer.college_type || "KPR College",
+          roll_number: customer.roll_number || "",
+          delivery_method: customer.delivery_method || "college_delivery",
+          department: customer.department || "",
+          year: customer.year || "",
+          section: customer.section || "",
+          building_block: customer.building_block || "",
+          pickup_location: customer.pickup_location || "",
+          address: customer.address || "KPR College Campus",
+          city: customer.city || "Coimbatore",
+          state: customer.state || "Tamil Nadu",
+          pincode: customer.pincode || "641407",
+          updated_at: new Date().toISOString(),
+        };
+
+        if (customer.auth_user_id) {
+          customerRow.auth_user_id = customer.auth_user_id;
+        }
+
+        if (existingCustomer) {
+          console.log("Found existing customer:", existingCustomer.id, "Updating with latest details...");
+          const { data: updatedCust, error: updateCustErr } = await supabaseServer
+            .from("customers")
+            .update(customerRow)
+            .eq("id", existingCustomer.id)
+            .select()
+            .single();
+
+          if (!updateCustErr && updatedCust) {
+            resolvedCustomerId = updatedCust.id;
+          } else {
+            resolvedCustomerId = existingCustomer.id;
+          }
+        } else {
+          console.log("No existing customer found. Inserting new customer in Supabase...");
+          const { data: newCust, error: insertCustErr } = await supabaseServer
+            .from("customers")
+            .insert([customerRow])
+            .select()
+            .single();
+
+          if (insertCustErr || !newCust) {
+            console.error("Failed to insert customer record:", insertCustErr);
+            return res.status(500).json({ success: false, error: "Failed to persist customer: " + (insertCustErr?.message || "Unknown error") });
+          }
+          resolvedCustomerId = newCust.id;
+        }
+      }
+
+      if (!resolvedCustomerId) {
+        return res.status(400).json({ success: false, error: "Valid customer is required to create an order." });
+      }
+
+      // 3. Generate unique order number on server (Section 4)
+      let orderNumber = `3DP-2026-${String(Math.floor(10000 + Math.random() * 90000))}`;
+      const { data: existingOrdNum } = await supabaseServer
+        .from("orders")
+        .select("id")
+        .eq("order_number", orderNumber)
+        .maybeSingle();
+      if (existingOrdNum) {
+        orderNumber = `3DP-2026-${String(Math.floor(10000 + Math.random() * 90000))}`;
+      }
+
+      // 4. Session timestamps & initial status (Section 7)
+      const sessionCreatedAt = new Date().toISOString();
+      const sessionExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+      const orderInsertPayload = {
+        order_number: orderNumber,
+        customer_id: resolvedCustomerId,
+        product_id: prodRecord.id,
+        quantity: validatedQty,
+        unit_price: unitPrice,
+        total_amount: totalAmount,
+        customization: customization || {},
+        order_status: "PENDING_PAYMENT",
+        payment_session_created_at: sessionCreatedAt,
+        payment_session_expires_at: sessionExpiresAt,
+      };
+
+      // 5. Insert order into Supabase (Sections 2, 3, 22)
+      console.log("==========================================");
+      console.log("TABLE: orders");
+      console.log("OPERATION: INSERT");
+      console.log("REQUEST DATA:", JSON.stringify(orderInsertPayload));
+
+      const { data: insertedOrder, error: orderInsertErr } = await supabaseServer
+        .from("orders")
+        .insert([orderInsertPayload])
+        .select(`
+          *,
+          product:products(*),
+          customer:customers(*)
+        `)
+        .single();
+
+      console.log("RESPONSE DATA:", insertedOrder);
+      console.log("ERROR:", orderInsertErr);
+      console.log("==========================================");
+
+      if (orderInsertErr || !insertedOrder) {
+        console.error("Supabase order insert failed:", orderInsertErr);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to persist order to Supabase: " + (orderInsertErr?.message || "Unknown error"),
+        });
+      }
+
+      // 6. Create initial payment record linked to orders.id (Section 8)
+      const paymentPayload = {
+        order_id: insertedOrder.id,
+        amount: totalAmount,
+        payment_status: "PENDING",
+      };
+
+      console.log("==========================================");
+      console.log("TABLE: payments");
+      console.log("OPERATION: INSERT");
+      console.log("REQUEST DATA:", JSON.stringify(paymentPayload));
+
+      const { data: insertedPayment, error: paymentInsertErr } = await supabaseServer
+        .from("payments")
+        .insert([paymentPayload])
+        .select()
+        .single();
+
+      console.log("RESPONSE DATA:", insertedPayment);
+      console.log("ERROR:", paymentInsertErr);
+      console.log("==========================================");
+
+      if (paymentInsertErr) {
+        console.error("Warning: Initial payment record creation failed:", paymentInsertErr);
+      }
+
+      // 7. Return actual database record (Section 14)
+      return res.json({
+        success: true,
+        order: {
+          ...insertedOrder,
+          payment: insertedPayment || null,
+        },
+      });
+    } catch (err: any) {
+      console.error("API POST /api/orders/create error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Internal server error." });
+    }
+  });
+
+  /**
+   * Dedicated endpoint for Track Order page
+   * Allows searching by Order Number (e.g. 3DP-2026-65602) or 10-digit Phone Number
+   */
+  app.get("/api/orders/track", async (req, res) => {
+    try {
+      const queryParam = String(req.query.query || req.query.order || "").trim();
+      if (!queryParam) {
+        return res.status(400).json({ success: false, error: "Order number or phone number is required." });
+      }
+
+      if (!supabaseServer) {
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      const cleanDigits = queryParam.replace(/\D/g, "");
+      const isPhone = cleanDigits.length === 10 && !queryParam.toUpperCase().includes("3DP");
+      const normalizedOrderNum = queryParam.toUpperCase();
+
+      console.log("Track Order API search query:", queryParam, "isPhone:", isPhone);
+
+      let orderData: any = null;
+
+      if (isPhone) {
+        // Search by phone number in customers table (exact 10 digits or matching)
+        const { data: customerRecords } = await supabaseServer
+          .from("customers")
+          .select("id")
+          .or(`phone.eq.${cleanDigits},phone.ilike.%${cleanDigits}%`)
+          .limit(10);
+
+        if (customerRecords && customerRecords.length > 0) {
+          const customerIds = customerRecords.map((c: any) => c.id);
+          const { data: foundOrders } = await supabaseServer
+            .from("orders")
+            .select(`
+              *,
+              product:products(*),
+              customer:customers(*),
+              payment:payments(*)
+            `)
+            .in("customer_id", customerIds)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          if (foundOrders && foundOrders.length > 0) {
+            orderData = foundOrders[0];
+          }
+        }
+      }
+
+      if (!orderData) {
+        // Search by order_number or id
+        let trackQuery = supabaseServer
+          .from("orders")
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*),
+            payment:payments(*)
+          `);
+
+        if (isUuid(queryParam)) {
+          trackQuery = trackQuery.or(`order_number.ilike.%${normalizedOrderNum}%,id.eq.${queryParam}`);
+        } else {
+          trackQuery = trackQuery.ilike("order_number", `%${normalizedOrderNum}%`);
+        }
+
+        const { data: foundOrders, error: findErr } = await trackQuery
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (!findErr && foundOrders && foundOrders.length > 0) {
+          orderData = foundOrders[0];
+        }
+      }
+
+      if (!orderData) {
+        return res.status(404).json({
+          success: false,
+          error: "No matching order found. Please check the order number or phone.",
+        });
+      }
+
+      const paymentData = Array.isArray(orderData.payment) ? orderData.payment[0] || null : orderData.payment;
+      const normalizedOrder = {
+        ...orderData,
+        payment: paymentData,
+      };
+
+      console.log("Track Order API found order:", normalizedOrder.order_number, "status:", normalizedOrder.order_status);
+
+      return res.json({
+        success: true,
+        order: normalizedOrder,
+        orders: [normalizedOrder],
+        payment: paymentData,
+      });
+    } catch (err: any) {
+      console.error("API GET /api/orders/track error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Internal server error." });
+    }
+  });
+
+  /**
+   * Dedicated endpoint to fetch order & payment details for checkout / payment page
+   */
+  app.get("/api/orders/:orderId", async (req, res) => {
+    try {
+      const { orderId } = req.params;
+      if (!orderId || orderId.trim() === "") {
+        return res.status(400).json({ success: false, error: "Order ID is required." });
+      }
+
+      const cleanOrderId = orderId.trim();
+      console.log("Payment API fetching order:", cleanOrderId);
+
+      if (!supabaseServer) {
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      // Fetch order with product, customer, and payment relations
+      let orderQuery = supabaseServer
+        .from("orders")
+        .select(`
+          *,
+          product:products(*),
+          customer:customers(*),
+          payment:payments(*)
+        `);
+
+      if (isUuid(cleanOrderId)) {
+        orderQuery = orderQuery.or(`id.eq.${cleanOrderId},order_number.eq.${cleanOrderId}`);
+      } else {
+        orderQuery = orderQuery.ilike("order_number", cleanOrderId);
+      }
+
+      const { data: orderData, error: orderError } = await orderQuery.maybeSingle();
+
+      if (orderError) {
+        console.error("Payment page backend error:", orderError);
+        return res.status(500).json({ success: false, error: "Failed to retrieve order." });
+      }
+
+      if (!orderData) {
+        return res.status(404).json({
+          success: false,
+          error: "Payment session could not be found. Please create a new order.",
+        });
+      }
+
+      // Check if session has expired
+      let isExpired = false;
+      if (orderData.payment_session_expires_at) {
+        const expiresAtTime = new Date(orderData.payment_session_expires_at).getTime();
+        if (Date.now() >= expiresAtTime && (orderData.order_status === "PENDING_PAYMENT" || orderData.order_status === "ORDER_PLACED")) {
+          isExpired = true;
+          orderData.order_status = "PAYMENT_EXPIRED";
+          await supabaseServer
+            .from("orders")
+            .update({ order_status: "PAYMENT_EXPIRED", updated_at: new Date().toISOString() })
+            .eq("id", orderData.id);
+        }
+      }
+
+      const paymentData = Array.isArray(orderData.payment) ? orderData.payment[0] || null : orderData.payment;
+      const normalizedOrder = {
+        ...orderData,
+        payment: paymentData,
+      };
+
+      // Load merchant settings for UPI payment
+      const { data: settingsRows } = await supabaseServer
+        .from("settings")
+        .select("key, value")
+        .in("key", ["merchant_upi_id", "merchant_name", "support_phone", "support_whatsapp"]);
+
+      const settingsMap: Record<string, string> = {};
+      if (settingsRows) {
+        for (const row of settingsRows) {
+          settingsMap[row.key] = row.value;
+        }
+      }
+
+      const responsePayload = {
+        success: true,
+        expired: isExpired,
+        data: {
+          order: normalizedOrder,
+          payment: paymentData,
+          settings: {
+            merchant_upi_id: settingsMap.merchant_upi_id || process.env.VITE_MERCHANT_UPI_ID || "printlab3d@okhdfcbank",
+            merchant_name: settingsMap.merchant_name || process.env.VITE_MERCHANT_NAME || "PRINTLAB 3D",
+            support_phone: settingsMap.support_phone,
+            support_whatsapp: settingsMap.support_whatsapp,
+          },
+        },
+      };
+
+      console.log("Payment API response for order:", cleanOrderId, "status:", normalizedOrder.order_status);
+      return res.json(responsePayload);
+    } catch (err: any) {
+      console.error("API GET /api/orders/:orderId error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Internal server error." });
+    }
+  });
+
+  /**
+   * Dedicated endpoint to submit customer payment proof (UTR / screenshot)
+   * Connects payment directly to existing orders.id without creating duplicate orders
+   */
+  app.post("/api/payments/submit", async (req, res) => {
+    try {
+      const orderId = req.body.orderId || req.body.order_id;
+      const amount = req.body.amount;
+      const transactionId = req.body.transactionId || req.body.transaction_id;
+      const screenshotUrl = req.body.screenshotUrl || req.body.screenshot_url;
+      const upiId = req.body.upiId || req.body.upi_id;
+
+      if (!orderId || String(orderId).trim() === "") {
+        return res.status(400).json({ success: false, error: "Order ID is required." });
+      }
+
+      const cleanOrderId = String(orderId).trim();
+      const cleanTx = transactionId ? String(transactionId).trim().toUpperCase() : undefined;
+
+      console.log("Payment submission for order:", cleanOrderId, "UTR:", cleanTx);
+
+      if (!supabaseServer) {
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      // 1. Find the existing order in Supabase
+      let orderFindQuery = supabaseServer
+        .from("orders")
+        .select("id, order_number, total_amount, order_status, payment_session_expires_at");
+
+      if (isUuid(cleanOrderId)) {
+        orderFindQuery = orderFindQuery.or(`id.eq.${cleanOrderId},order_number.eq.${cleanOrderId}`);
+      } else {
+        orderFindQuery = orderFindQuery.ilike("order_number", cleanOrderId);
+      }
+
+      const { data: existingOrder, error: orderFindErr } = await orderFindQuery.maybeSingle();
+
+      if (orderFindErr) {
+        console.error("Payment submit order lookup error:", orderFindErr);
+        return res.status(500).json({ success: false, error: "Database error looking up order." });
+      }
+
+      if (!existingOrder) {
+        return res.status(404).json({
+          success: false,
+          error: "Order not found. Payment can only be submitted for an existing order.",
+        });
+      }
+
+      // 2. Check 10-minute session expiration
+      if (existingOrder.payment_session_expires_at) {
+        const expiresAtTime = new Date(existingOrder.payment_session_expires_at).getTime();
+        if (
+          Date.now() >= expiresAtTime &&
+          (existingOrder.order_status === "PENDING_PAYMENT" || existingOrder.order_status === "ORDER_PLACED")
+        ) {
+          await supabaseServer
+            .from("orders")
+            .update({ order_status: "PAYMENT_EXPIRED", updated_at: new Date().toISOString() })
+            .eq("id", existingOrder.id);
+
+          return res.status(400).json({
+            success: false,
+            expired: true,
+            error: "Payment session has expired. This order has been cancelled.",
+          });
+        }
+      }
+
+      // 3. Create or update payments record linked to existing orders.id
+      const paymentPayload: Record<string, any> = {
+        order_id: existingOrder.id,
+        amount: Number(amount) || Number(existingOrder.total_amount) || 0,
+        transaction_id: cleanTx,
+        screenshot_url: screenshotUrl || null,
+        upi_id: upiId || null,
+        payment_status: "PENDING",
+        updated_at: new Date().toISOString(),
+      };
+
+      // Check if a payment row already exists for this order
+      const { data: existingPayment } = await supabaseServer
+        .from("payments")
+        .select("id")
+        .eq("order_id", existingOrder.id)
+        .maybeSingle();
+
+      let paymentRecordId = existingPayment?.id;
+
+      if (existingPayment) {
+        console.log("==========================================");
+        console.log("TABLE: payments");
+        console.log("OPERATION: UPDATE");
+        console.log("REQUEST DATA:", JSON.stringify(paymentPayload));
+
+        const { error: paymentUpdateErr } = await supabaseServer
+          .from("payments")
+          .update(paymentPayload)
+          .eq("id", existingPayment.id);
+
+        console.log("RESPONSE DATA:", existingPayment.id);
+        console.log("ERROR:", paymentUpdateErr);
+        console.log("==========================================");
+
+        if (paymentUpdateErr) {
+          console.error("Payment update error:", paymentUpdateErr);
+          return res.status(500).json({ success: false, error: "Failed to update payment record." });
+        }
+      } else {
+        console.log("==========================================");
+        console.log("TABLE: payments");
+        console.log("OPERATION: INSERT");
+        console.log("REQUEST DATA:", JSON.stringify(paymentPayload));
+
+        const { data: newPayment, error: paymentInsertErr } = await supabaseServer
+          .from("payments")
+          .insert([paymentPayload])
+          .select("id")
+          .single();
+
+        console.log("RESPONSE DATA:", newPayment);
+        console.log("ERROR:", paymentInsertErr);
+        console.log("==========================================");
+
+        if (paymentInsertErr) {
+          console.error("Payment insert error:", paymentInsertErr);
+          return res.status(500).json({ success: false, error: "Failed to create payment record." });
+        }
+        paymentRecordId = newPayment?.id;
+      }
+
+      // 4. Update order status to PAYMENT_PROCESSING
+      console.log("==========================================");
+      console.log("TABLE: orders");
+      console.log("OPERATION: UPDATE");
+      console.log("REQUEST DATA:", JSON.stringify({ id: existingOrder.id, order_status: "PAYMENT_PROCESSING" }));
+
+      const { error: orderStatusErr } = await supabaseServer
+        .from("orders")
+        .update({
+          order_status: "PAYMENT_PROCESSING",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingOrder.id);
+
+      console.log("RESPONSE DATA:", { id: existingOrder.id, order_status: "PAYMENT_PROCESSING" });
+      console.log("ERROR:", orderStatusErr);
+      console.log("==========================================");
+
+      if (orderStatusErr) {
+        console.error("Order status update error:", orderStatusErr);
+      }
+
+      // 5. Register in-memory transaction registry if UTR provided
+      if (cleanTx) {
+        knownTransactionRegistry.set(cleanTx, {
+          orderNumber: existingOrder.order_number,
+          orderId: existingOrder.id,
+          amount: Number(amount) || Number(existingOrder.total_amount) || 0,
+          date: new Date().toISOString(),
+        });
+      }
+
+      console.log("Payment successfully submitted for order:", existingOrder.order_number, "order_status: PAYMENT_PROCESSING");
+
+      // 6. Return exact response format required
+      return res.json({
+        success: true,
+        order: {
+          id: existingOrder.id,
+          order_number: existingOrder.order_number,
+          order_status: "PAYMENT_PROCESSING",
+          total_amount: existingOrder.total_amount,
+        },
+        payment: {
+          id: paymentRecordId,
+          payment_status: "PENDING",
+          transaction_id: cleanTx,
+        },
+      });
+    } catch (err: any) {
+      console.error("API POST /api/payments/submit error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Internal server error." });
+    }
+  });
+
 
   /**
    * Backend Payment Session Verification Endpoint
    * Enforces 10-minute window before accepting any payment actions
+   * Validates directly against database if orderId is provided
    */
-  app.post("/api/payments/verify-session", (req, res) => {
+  app.post("/api/payments/verify-session", async (req, res) => {
     try {
       const { expiresAt, orderId } = req.body;
-      if (!expiresAt) {
-        return res.status(400).json({ valid: false, error: "Missing session expiration timestamp." });
+      let expiryTime: number | null = null;
+      let orderStatus: string | null = null;
+
+      if (orderId && supabaseServer) {
+        const cleanId = String(orderId).trim();
+        let sessionQuery = supabaseServer
+          .from("orders")
+          .select("payment_session_expires_at, order_status");
+
+        if (isUuid(cleanId)) {
+          sessionQuery = sessionQuery.or(`id.eq.${cleanId},order_number.eq.${cleanId}`);
+        } else {
+          sessionQuery = sessionQuery.ilike("order_number", cleanId);
+        }
+
+        const { data: orderData } = await sessionQuery.maybeSingle();
+
+        if (orderData) {
+          orderStatus = orderData.order_status;
+          if (orderData.payment_session_expires_at) {
+            expiryTime = new Date(orderData.payment_session_expires_at).getTime();
+          }
+        }
       }
 
-      const expiryTime = new Date(expiresAt).getTime();
-      const isExpired = Date.now() >= expiryTime;
+      if (!expiryTime) {
+        if (!expiresAt) {
+          return res.status(400).json({ valid: false, error: "Missing session expiration timestamp or order ID." });
+        }
+        expiryTime = new Date(expiresAt).getTime();
+      }
 
+      if (orderStatus === "PAYMENT_EXPIRED" || orderStatus === "CANCELLED") {
+        return res.status(400).json({
+          valid: false,
+          expired: true,
+          error: "This order has been cancelled or the payment session has expired.",
+        });
+      }
+
+      const isExpired = Date.now() >= expiryTime;
       if (isExpired) {
+        if (orderId && supabaseServer && orderStatus === "PENDING_PAYMENT") {
+          const cleanId = String(orderId).trim();
+          let cancelQuery = supabaseServer
+            .from("orders")
+            .update({ order_status: "PAYMENT_EXPIRED" });
+
+          if (isUuid(cleanId)) {
+            cancelQuery = cancelQuery.or(`id.eq.${cleanId},order_number.eq.${cleanId}`);
+          } else {
+            cancelQuery = cancelQuery.ilike("order_number", cleanId);
+          }
+
+          await cancelQuery;
+        }
         return res.status(400).json({
           valid: false,
           expired: true,
@@ -263,6 +1001,51 @@ async function startServer() {
       });
     } catch (err: any) {
       return res.status(500).json({ valid: false, error: err.message || "Session verification failed." });
+    }
+  });
+
+  /**
+   * Backend Duplicate Transaction Verification Endpoint
+   */
+  app.post("/api/payments/check-duplicate", async (req, res) => {
+    try {
+      const { transactionId, orderId } = req.body;
+      if (!transactionId || String(transactionId).trim().length < 6) {
+        return res.json({ isDuplicate: false });
+      }
+
+      const cleanTx = String(transactionId).trim().toUpperCase();
+
+      // 1. Check in-memory registry
+      const inMemory = knownTransactionRegistry.get(cleanTx);
+      if (inMemory && inMemory.orderId !== orderId) {
+        return res.json({
+          isDuplicate: true,
+          orderNumber: inMemory.orderNumber,
+        });
+      }
+
+      // 2. Check Supabase payments table
+      if (supabaseServer) {
+        const { data, error } = await supabaseServer
+          .from("payments")
+          .select("id, order_id, transaction_id, payment_status, orders(id, order_number)")
+          .ilike("transaction_id", cleanTx)
+          .neq("payment_status", "REJECTED")
+          .maybeSingle();
+
+        if (!error && data && data.order_id !== orderId) {
+          const matchedOrderNum = (data as any).orders?.order_number || "Existing Order";
+          return res.json({
+            isDuplicate: true,
+            orderNumber: matchedOrderNum,
+          });
+        }
+      }
+
+      return res.json({ isDuplicate: false });
+    } catch {
+      return res.json({ isDuplicate: false });
     }
   });
 
@@ -388,27 +1171,21 @@ Extract the following exact payment details with high precision:
           if (parsed.paymentDate) paymentDate = parsed.paymentDate;
           if (parsed.paymentTime) paymentTime = parsed.paymentTime;
         } catch (aiErr) {
-          console.warn("Gemini vision analysis error, using intelligent local heuristic extractor:", aiErr);
+          console.warn("Gemini vision analysis error:", aiErr);
         }
       }
 
-      // If AI was offline or returned empty fields, apply intelligent image & metadata heuristic
+      // If AI was offline or could not detect required details, do NOT generate fake transactions
       if (!detectedTransactionId && !detectedAmount) {
-        // Fallback intelligent generator based on image bytes hash / expected info
-        const pseudoRandomSeed = cleanBase64
-          .slice(100, 150)
-          .split("")
-          .reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
-        const generatedUtr = `${Math.floor(400000000000 + (pseudoRandomSeed % 500000000000))}`;
-
-        detectedTransactionId = generatedUtr;
-        detectedAmount = expectedAmount ? Number(expectedAmount) : 299;
-        detectedUpiId = expectedUpiId || "printlab3d@okhdfcbank";
-        detectedPaymentStatus = "SUCCESS";
-        ocrConfidence = 0.94;
-        receiverName = "PRINTLAB 3D";
-        paymentDate = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-        paymentTime = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+        return res.status(422).json({
+          success: false,
+          error: "Could not automatically extract payment details from screenshot. Please enter your 12-digit UTR manually.",
+          analysisStatus: "FAILED",
+          warnings: ["Could not extract payment details from screenshot. Please enter your 12-digit UTR manually."],
+          isValidLooking: false,
+          expectedUpiId,
+          expectedAmount: expectedAmount ? Number(expectedAmount) : null,
+        });
       }
 
       // Normalization and Validation Checks
@@ -547,10 +1324,10 @@ Extract the following exact payment details with high precision:
   });
 
   /**
-   * Secure Cloudinary Image Upload Endpoint
+   * Secure Cloudinary Image Upload Endpoint (Protected with Admin Authorization)
    * Handles main and gallery product image uploads into structured folders
    */
-  app.post("/api/cloudinary/upload", async (req, res) => {
+  app.post("/api/cloudinary/upload", requireAdminAuth, async (req, res) => {
     try {
       if (!isCloudinaryConfigured()) {
         return res.status(503).json({

@@ -3,38 +3,14 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateOrderNumber } from '../lib/upiUtils';
 import { productService } from './productService';
 
-const ORDERS_STORAGE_KEY = 'printlab_orders_data_v1';
-
 const FAKE_ORDER_NUMBERS = new Set(['3DP-2026-00124', '3DP-2026-00125', '3DP-2026-00126']);
-const FAKE_CUSTOMER_NAMES = new Set(['sanjay kumar', 'priya sharma', 'aditya varma']);
 
 function isFakeOrder(o: any): boolean {
   if (!o) return true;
   if (o.order_number && FAKE_ORDER_NUMBERS.has(o.order_number.toUpperCase())) return true;
-  if (o.customer?.name && FAKE_CUSTOMER_NAMES.has(o.customer.name.trim().toLowerCase())) return true;
   if (o.product?.name && o.product.name.trim().toLowerCase() === 'nothing') return true;
   if (o.product_id === 'nothing' || o.id === 'nothing') return true;
   return false;
-}
-
-function getLocalOrders(): Order[] {
-  try {
-    const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: any[] = JSON.parse(raw);
-    const cleaned = parsed.filter((o) => !isFakeOrder(o)).map(normalizeOrder);
-    if (cleaned.length !== parsed.length) {
-      saveLocalOrders(cleaned);
-    }
-    return cleaned;
-  } catch {
-    return [];
-  }
-}
-
-function saveLocalOrders(orders: Order[]): void {
-  const cleaned = orders.filter((o) => !isFakeOrder(o));
-  localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(cleaned));
 }
 
 function normalizeOrder(o: any): Order {
@@ -46,7 +22,7 @@ function normalizeOrder(o: any): Order {
 
 export const orderService = {
   /**
-   * Fetch all orders from Supabase (pure real data, no fake mock fallback)
+   * Fetch all orders from Supabase (pure real database records)
    */
   async getAll(): Promise<Order[]> {
     if (!isSupabaseConfigured || !supabase) {
@@ -71,7 +47,6 @@ export const orderService = {
       }
 
       const normalized = (data || []).map(normalizeOrder).filter((o) => !isFakeOrder(o));
-      saveLocalOrders(normalized);
       return normalized;
     } catch (err) {
       console.error('Supabase orders fetch error:', err);
@@ -80,9 +55,64 @@ export const orderService = {
   },
 
   /**
-   * Fetch order by ID or order number
+   * Fetch order by ID or order number (via server API with fallback to Supabase)
    */
   async getById(idOrOrderNumber: string): Promise<Order | null> {
+    if (!idOrOrderNumber || !idOrOrderNumber.trim()) return null;
+    const cleanId = idOrOrderNumber.trim();
+
+    // 1. Try server API endpoint first
+    try {
+      const res = await fetch(`/api/orders/${encodeURIComponent(cleanId)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data?.order && !isFakeOrder(json.data.order)) {
+          return normalizeOrder(json.data.order);
+        }
+      } else if (res.status === 404) {
+        // Specifically not found on server
+        return null;
+      }
+    } catch (apiErr) {
+      console.warn('Backend /api/orders/:orderId fetch failed, trying direct Supabase query:', apiErr);
+    }
+
+    // 2. Direct Supabase query fallback
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+        let query = supabase
+          .from('orders')
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*),
+            payment:payments(*)
+          `);
+
+        if (isUUID) {
+          query = query.or(`id.eq.${cleanId},order_number.eq.${cleanId}`);
+        } else {
+          query = query.ilike('order_number', cleanId);
+        }
+
+        const { data, error } = await query.maybeSingle();
+
+        if (!error && data && !isFakeOrder(data)) {
+          return normalizeOrder(data);
+        }
+      } catch (err) {
+        console.warn('Supabase single order fetch failed:', err);
+      }
+    }
+
+    return null;
+  },
+
+  /**
+   * Fetch customer orders
+   */
+  async getByCustomerId(customerId: string): Promise<Order[]> {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
@@ -93,80 +123,76 @@ export const orderService = {
             customer:customers(*),
             payment:payments(*)
           `)
-          .or(`id.eq.${idOrOrderNumber},order_number.eq.${idOrOrderNumber}`)
-          .maybeSingle();
+          .eq('customer_id', customerId)
+          .order('created_at', { ascending: false });
 
         if (error) throw error;
-        if (data && !isFakeOrder(data)) return normalizeOrder(data);
-        return null;
+        return (data || []).map(normalizeOrder).filter((o) => !isFakeOrder(o));
       } catch (err) {
-        console.warn('Supabase single order fetch failed:', err);
-        return null;
+        console.warn('Supabase customer orders query error:', err);
+        return [];
       }
     }
-
-    const all = getLocalOrders();
-    return all.find((o) => (o.id === idOrOrderNumber || o.order_number.toUpperCase() === idOrOrderNumber.toUpperCase()) && !isFakeOrder(o)) || null;
+    return [];
   },
 
   /**
-   * Fetch customer orders
-   */
-  async getByCustomerId(customerId: string): Promise<Order[]> {
-    const all = await this.getAll();
-    return all.filter((o) => o.customer_id === customerId || o.customer?.id === customerId);
-  },
-
-  /**
-   * Create new order with server price validation
+   * Create new order with server-side validation and Supabase persistence
    */
   async create(orderPayload: {
-    customer_id: string;
+    customer?: any;
+    customer_id?: string;
     product_id: string;
     quantity: number;
-    unit_price: number;
-    total_amount: number;
+    unit_price?: number;
+    total_amount?: number;
     customization?: Order['customization'];
-    customer?: Order['customer'];
     product?: Order['product'];
   }): Promise<Order> {
-    const orderNumber = generateOrderNumber();
-    const sessionCreatedAt = new Date().toISOString();
-    // 10-minute payment session window
-    const sessionExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    return this.createOrder(orderPayload);
+  },
 
-    // Price calculation integrity enforcement: total_amount = unit_price * quantity
-    const validatedTotal = Number(orderPayload.unit_price) * Number(orderPayload.quantity);
+  async createOrder(orderPayload: {
+    customer?: any;
+    customer_id?: string;
+    product_id: string;
+    quantity: number;
+    unit_price?: number;
+    total_amount?: number;
+    customization?: Order['customization'];
+    product?: Order['product'];
+  }): Promise<Order> {
+    // 1. Call dedicated backend API endpoint /api/orders/create
+    try {
+      const res = await fetch('/api/orders/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: orderPayload.customer,
+          customer_id: orderPayload.customer_id,
+          product_id: orderPayload.product_id,
+          quantity: orderPayload.quantity,
+          customization: orderPayload.customization,
+        }),
+      });
 
-    const newOrder: Order = {
-      id: 'ord-' + Date.now(),
-      order_number: orderNumber,
-      customer_id: orderPayload.customer_id,
-      product_id: orderPayload.product_id,
-      quantity: orderPayload.quantity,
-      unit_price: orderPayload.unit_price,
-      total_amount: validatedTotal,
-      customization: orderPayload.customization,
-      order_status: 'PENDING_PAYMENT',
-      payment_session_created_at: sessionCreatedAt,
-      payment_session_expires_at: sessionExpiresAt,
-      created_at: sessionCreatedAt,
-      updated_at: sessionCreatedAt,
-      customer: orderPayload.customer,
-      product: orderPayload.product,
-      payment: {
-        id: 'pay-' + Date.now(),
-        order_id: 'ord-' + Date.now(),
-        amount: validatedTotal,
-        payment_status: 'PENDING',
-        created_at: sessionCreatedAt,
-        updated_at: sessionCreatedAt,
-      },
-    };
+      const data = await res.json();
+      if (res.ok && data.success && data.order) {
+        return normalizeOrder(data.order);
+      } else {
+        throw new Error(data.error || 'Failed to create order in database.');
+      }
+    } catch (err: any) {
+      console.error('API /api/orders/create error:', err);
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase
+      // 2. Direct Supabase insert fallback if server endpoint is unreachable
+      if (isSupabaseConfigured && supabase) {
+        const orderNumber = generateOrderNumber();
+        const sessionCreatedAt = new Date().toISOString();
+        const sessionExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        const validatedTotal = Number(orderPayload.unit_price || 0) * Number(orderPayload.quantity || 1);
+
+        const { data: dbOrder, error: dbError } = await supabase
           .from('orders')
           .insert([{
             order_number: orderNumber,
@@ -180,41 +206,39 @@ export const orderService = {
             payment_session_created_at: sessionCreatedAt,
             payment_session_expires_at: sessionExpiresAt,
           }])
-          .select()
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*)
+          `)
           .single();
 
-        if (error) throw error;
-        if (data) {
-          newOrder.id = data.id;
-          newOrder.order_number = data.order_number;
-          // also initialize payment row in Supabase
-          await supabase.from('payments').insert([{
-            order_id: data.id,
-            amount: validatedTotal,
-            payment_status: 'PENDING',
-          }]);
+        if (dbError) {
+          console.error('Direct Supabase order insert failed:', dbError);
+          throw new Error('Database error creating order: ' + dbError.message);
         }
-      } catch (err) {
-        console.warn('Supabase order insert error, saving locally:', err);
+
+        if (dbOrder) {
+          const { data: dbPayment } = await supabase
+            .from('payments')
+            .insert([{
+              order_id: dbOrder.id,
+              amount: validatedTotal,
+              payment_status: 'PENDING',
+            }])
+            .select()
+            .single();
+
+          return normalizeOrder({
+            ...dbOrder,
+            payment: dbPayment || null,
+          });
+        }
       }
+
+      // Do NOT mask database failure by returning fake local orders!
+      throw err;
     }
-
-    const current = getLocalOrders();
-    const updated = [newOrder, ...current];
-    saveLocalOrders(updated);
-    return newOrder;
-  },
-
-  async createOrder(orderPayload: {
-    customer_id: string;
-    product_id: string;
-    quantity: number;
-    unit_price: number;
-    total_amount: number;
-    customization?: Order['customization'];
-    product?: Order['product'];
-  }): Promise<Order> {
-    return this.create(orderPayload);
   },
 
   async updateStatus(orderId: string, status: OrderStatus): Promise<Order> {
@@ -224,26 +248,22 @@ export const orderService = {
           .from('orders')
           .update({ order_status: status, updated_at: new Date().toISOString() })
           .eq('id', orderId)
-          .select()
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*),
+            payment:payments(*)
+          `)
           .single();
 
         if (error) throw error;
+        if (data) return normalizeOrder(data);
       } catch (err) {
-        console.warn('Supabase status update failed:', err);
+        console.error('Supabase status update failed:', err);
+        throw err;
       }
     }
-
-    const current = getLocalOrders();
-    const index = current.findIndex((o) => o.id === orderId);
-    if (index === -1) throw new Error('Order not found');
-
-    current[index] = {
-      ...current[index],
-      order_status: status,
-      updated_at: new Date().toISOString(),
-    };
-    saveLocalOrders(current);
-    return current[index];
+    throw new Error('Database service unavailable');
   },
 
   /**
@@ -254,12 +274,10 @@ export const orderService = {
       try {
         await supabase.from('orders').delete().eq('id', orderId);
       } catch (err) {
-        console.warn('Supabase order delete error:', err);
+        console.error('Supabase order delete error:', err);
+        throw err;
       }
     }
-    const current = getLocalOrders();
-    const filtered = current.filter((o) => o.id !== orderId && o.order_number !== orderId);
-    saveLocalOrders(filtered);
   },
 
   /**
@@ -291,32 +309,19 @@ export const orderService = {
       modified = true;
     }
 
-    if (modified) {
-      const current = getLocalOrders();
-      const index = current.findIndex((o) => o.id === currentOrder.id || o.order_number === currentOrder.order_number);
-      if (index !== -1) {
-        current[index] = {
-          ...current[index],
-          ...currentOrder,
-          updated_at: new Date().toISOString(),
-        };
-        saveLocalOrders(current);
-      }
-
-      if (isSupabaseConfigured && supabase) {
-        try {
-          await supabase
-            .from('orders')
-            .update({
-              order_status: currentOrder.order_status,
-              payment_session_created_at: currentOrder.payment_session_created_at,
-              payment_session_expires_at: currentOrder.payment_session_expires_at,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', currentOrder.id);
-        } catch (err) {
-          console.warn('Supabase session sync error:', err);
-        }
+    if (modified && isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('orders')
+          .update({
+            order_status: currentOrder.order_status,
+            payment_session_created_at: currentOrder.payment_session_created_at,
+            payment_session_expires_at: currentOrder.payment_session_expires_at,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentOrder.id);
+      } catch (err) {
+        console.warn('Supabase session sync error:', err);
       }
     }
 
@@ -365,15 +370,74 @@ export const orderService = {
     };
   },
 
+  async trackOrder(query: string): Promise<Order | null> {
+    const q = query.trim();
+    if (!q) return null;
+
+    try {
+      const res = await fetch(`/api/orders/track?query=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.order && !isFakeOrder(data.order)) {
+          return normalizeOrder(data.order);
+        }
+      }
+    } catch (err) {
+      console.warn('Backend trackOrder error, falling back:', err);
+    }
+
+    // Fallback: search Supabase directly
+    const results = await this.searchOrders(q);
+    return results.length > 0 ? results[0] : null;
+  },
+
   async searchOrders(query: string): Promise<Order[]> {
-    const all = await this.getAll();
-    const q = query.toLowerCase().trim();
-    return all.filter((o) => {
-      const matchNum = o.order_number.toLowerCase().includes(q);
-      const matchPhone = o.customer?.phone.toLowerCase().includes(q) || false;
-      const matchName = o.customer?.name.toLowerCase().includes(q) || false;
-      const matchTx = o.payment?.transaction_id?.toLowerCase().includes(q) || false;
-      return matchNum || matchPhone || matchName || matchTx;
-    });
+    const q = query.trim();
+    if (!q) return [];
+
+    // Try server-side track endpoint first for high reliability & RLS bypass
+    try {
+      const res = await fetch(`/api/orders/track?query=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.order && !isFakeOrder(data.order)) {
+          return [normalizeOrder(data.order)];
+        }
+      }
+    } catch (err) {
+      console.warn('Backend track search error, falling back to direct Supabase query:', err);
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
+        let query = supabase
+          .from('orders')
+          .select(`
+            *,
+            product:products(*),
+            customer:customers(*),
+            payment:payments(*)
+          `);
+
+        if (isUUID) {
+          query = query.or(`order_number.ilike.%${q}%,id.eq.${q}`);
+        } else {
+          query = query.ilike('order_number', `%${q}%`);
+        }
+
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (!error && data && data.length > 0) {
+          return data.map(normalizeOrder).filter((o) => !isFakeOrder(o));
+        }
+      } catch (err) {
+        console.warn('Supabase searchOrders error:', err);
+      }
+    }
+
+    return [];
   }
 };

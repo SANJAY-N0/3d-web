@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { DEFAULT_UPI_ID, DEFAULT_BUSINESS_NAME } from '../../lib/upiUtils';
-import { DEFAULT_CLOUDINARY_CLOUD_NAME, getCloudinaryCloudName, getCloudinaryDefaultFolder } from '../../lib/cloudinary';
+import { DEFAULT_CLOUDINARY_CLOUD_NAME, getCloudinaryCloudName, getCloudinaryDefaultFolder, checkCloudinaryConfig } from '../../lib/cloudinary';
+import { CloudinaryConfigStatus } from '../../types';
 import { DEFAULT_SUPPORT_CONFIG, getSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
 import { clearLocalCaches } from '../../services/productService';
 import { settingsService } from '../../services/settingsService';
@@ -21,8 +22,6 @@ import {
   ExternalLink,
   Phone,
   MessageSquare,
-  Eye,
-  EyeOff,
   Headphones,
 } from 'lucide-react';
 import { useToast } from '../../components/common/Toast';
@@ -49,20 +48,14 @@ export const AdminSettings: React.FC = () => {
     () => localStorage.getItem('printlab_support_alt_phone') || ''
   );
 
-  // Cloudinary Configuration State (Name, API Key, Secret, URL, Folder)
+  // Cloudinary Configuration State (Name & Folder)
   const [cloudName, setCloudName] = useState(
     () => getCloudinaryCloudName()
   );
-  const [cloudinaryApiKey, setCloudinaryApiKey] = useState(
-    () => localStorage.getItem('printlab_cloudinary_api_key') || '873981713524356'
-  );
-  const [cloudinaryApiSecret, setCloudinaryApiSecret] = useState(
-    () => localStorage.getItem('printlab_cloudinary_api_secret') || '17qkUtU1PH-KRltAlsM0lC8KCdw'
-  );
-  const [showSecret, setShowSecret] = useState(false);
   const [uploadFolder, setUploadFolder] = useState(
     () => getCloudinaryDefaultFolder()
   );
+  const [cloudinaryBackendStatus, setCloudinaryBackendStatus] = useState<CloudinaryConfigStatus | null>(null);
 
   // Load latest settings from Supabase on mount
   useEffect(() => {
@@ -81,6 +74,7 @@ export const AdminSettings: React.FC = () => {
       }
     };
     loadSettings();
+    checkCloudinaryConfig().then(setCloudinaryBackendStatus).catch(() => {});
   }, []);
 
   // Supabase Safe Public Configuration
@@ -125,8 +119,10 @@ export const AdminSettings: React.FC = () => {
     }
     await settingsService.set('cloudinary_cloud_name', cloudName.trim(), 'Cloudinary cloud name for product media assets');
     await settingsService.set('cloudinary_folder', uploadFolder.trim() || '3d-printing/products', 'Cloudinary root upload folder');
-    localStorage.setItem('printlab_cloudinary_api_key', cloudinaryApiKey.trim());
-    localStorage.setItem('printlab_cloudinary_api_secret', cloudinaryApiSecret.trim());
+    localStorage.setItem('printlab_cloudinary_cloud_name', cloudName.trim());
+    localStorage.setItem('printlab_cloudinary_folder', uploadFolder.trim() || '3d-printing/products');
+    localStorage.removeItem('printlab_cloudinary_api_key');
+    localStorage.removeItem('printlab_cloudinary_api_secret');
     showToast('Cloudinary media settings saved successfully to database!', 'success');
   };
 
@@ -137,9 +133,6 @@ export const AdminSettings: React.FC = () => {
       setTimeout(() => window.location.reload(), 800);
     }
   };
-
-  // Derived Cloudinary URL preview
-  const cloudinaryUrlPreview = `cloudinary://${cloudinaryApiKey}:${showSecret ? cloudinaryApiSecret : '••••••••••••••••'}@${cloudName}`;
 
   const sqlSchemaSnippet = `-- ==========================================================
 -- PRINTLAB 3D - AUDITED PRODUCTION DATABASE SCHEMA
@@ -446,7 +439,7 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
               <div>
                 <h2 className="font-display font-bold text-base text-slate-900 dark:text-white">Cloudinary Media Configuration</h2>
                 <p className="text-xs text-slate-500 dark:text-neutral-400">
-                  Configure Cloudinary parameters (Cloud Name, API Key, API Secret, URL, Folder) for 3D product showcase image delivery.
+                  Configure Cloudinary parameters (Cloud Name and default folder) for 3D product showcase image delivery.
                 </p>
               </div>
             </div>
@@ -473,42 +466,6 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-mono text-slate-700 dark:text-neutral-300">API Key *</label>
-                <input
-                  type="text"
-                  required
-                  value={cloudinaryApiKey}
-                  onChange={(e) => setCloudinaryApiKey(e.target.value)}
-                  placeholder="e.g. 873981713524356"
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
-                />
-                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Cloudinary API Key</span>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-mono text-slate-700 dark:text-neutral-300 flex items-center justify-between">
-                  <span>API Secret *</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowSecret(!showSecret)}
-                    className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    {showSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                    <span>{showSecret ? 'Hide' : 'Show'}</span>
-                  </button>
-                </label>
-                <input
-                  type={showSecret ? 'text' : 'password'}
-                  required
-                  value={cloudinaryApiSecret}
-                  onChange={(e) => setCloudinaryApiSecret(e.target.value)}
-                  placeholder="Enter Cloudinary API Secret"
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
-                />
-                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Stored securely for media uploads</span>
-              </div>
-
-              <div className="space-y-1.5">
                 <label className="font-mono text-slate-700 dark:text-neutral-300">Default Upload Folder</label>
                 <input
                   type="text"
@@ -521,23 +478,26 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
               </div>
             </div>
 
-            {/* Cloudinary URL Preview */}
-            <div className="p-3 bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl space-y-1 font-mono">
-              <span className="text-[11px] text-slate-400 dark:text-neutral-500 block uppercase">Generated CLOUDINARY_URL Format</span>
-              <div className="text-sky-600 dark:text-sky-400 text-xs break-all select-all flex items-center justify-between gap-2">
-                <span>{cloudinaryUrlPreview}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(`cloudinary://${cloudinaryApiKey}:${cloudinaryApiSecret}@${cloudName}`);
-                    showToast('Full Cloudinary URL copied to clipboard!', 'success');
-                  }}
-                  className="text-slate-500 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white shrink-0 p-1 rounded hover:bg-slate-200 dark:hover:bg-neutral-800 cursor-pointer"
-                  title="Copy full CLOUDINARY_URL"
+            {/* Backend Proxy & Credentials Security Notice */}
+            <div className="p-3.5 bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl space-y-1.5 font-mono text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-700 dark:text-neutral-300 font-semibold flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                  <span>Secure Backend Proxy</span>
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[11px] font-mono ${
+                    cloudinaryBackendStatus?.configured
+                      ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                      : 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                  }`}
                 >
-                  <Copy className="w-3.5 h-3.5" />
-                </button>
+                  {cloudinaryBackendStatus?.configured ? 'Proxy Configured' : 'Checking Server Config...'}
+                </span>
               </div>
+              <p className="text-[11px] text-slate-500 dark:text-neutral-400 font-sans leading-relaxed">
+                Cloudinary API credentials (<code className="text-cyan-600 dark:text-cyan-400">CLOUDINARY_API_KEY</code>, <code className="text-cyan-600 dark:text-cyan-400">CLOUDINARY_API_SECRET</code>) are securely managed in the backend server environment and never exposed to the client browser.
+              </p>
             </div>
 
             <button

@@ -1,30 +1,42 @@
 import { Customer } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
-const CUSTOMERS_STORAGE_KEY = 'printlab_customers_data_v1';
-const FAKE_CUSTOMER_NAMES = new Set(['sanjay kumar', 'priya sharma', 'aditya varma']);
+const CURRENT_PROFILE_KEY = 'printlab_user_customer_profile';
+
+// Clean up legacy all-customers cache if present
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('printlab_customers_data_v1');
+  } catch {
+    // ignore
+  }
+}
 
 function isFakeCustomer(c: any): boolean {
   if (!c) return true;
-  if (c.name && FAKE_CUSTOMER_NAMES.has(c.name.trim().toLowerCase())) return true;
   if (c.email && (c.email.includes('test.com') || c.email.includes('example.com'))) return true;
   return false;
 }
 
-function getLocalCustomers(): Customer[] {
+function getLocalCustomerProfile(): Customer | null {
   try {
-    const raw = localStorage.getItem(CUSTOMERS_STORAGE_KEY);
-    if (!raw) return [];
+    const raw = localStorage.getItem(CURRENT_PROFILE_KEY);
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((c) => !isFakeCustomer(c)) : [];
+    return isFakeCustomer(parsed) ? null : parsed;
   } catch {
-    return [];
+    return null;
   }
 }
 
-function saveLocalCustomers(customers: Customer[]): void {
-  const cleaned = customers.filter((c) => !isFakeCustomer(c));
-  localStorage.setItem(CUSTOMERS_STORAGE_KEY, JSON.stringify(cleaned));
+function saveLocalCustomerProfile(customer: Customer): void {
+  if (!isFakeCustomer(customer)) {
+    try {
+      localStorage.setItem(CURRENT_PROFILE_KEY, JSON.stringify(customer));
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export const customerService = {
@@ -64,7 +76,10 @@ export const customerService = {
             .single();
 
           if (updateError) throw updateError;
-          if (updated) return updated as Customer;
+          if (updated) {
+            saveLocalCustomerProfile(updated as Customer);
+            return updated as Customer;
+          }
         } else {
           // Insert new customer record in Supabase
           const { data: created, error: insertError } = await supabase
@@ -74,32 +89,18 @@ export const customerService = {
             .single();
 
           if (insertError) throw insertError;
-          if (created) return created as Customer;
+          if (created) {
+            saveLocalCustomerProfile(created as Customer);
+            return created as Customer;
+          }
         }
       } catch (err) {
-        console.warn('Supabase customer createOrUpdate error, saving locally:', err);
+        console.error('Supabase customer createOrUpdate error:', err);
+        throw err;
       }
     }
 
-    const current = getLocalCustomers();
-    // check if phone or email already exists locally
-    const existingIndex = current.findIndex(
-      c => c.phone === customerData.phone || (customerData.email && c.email === customerData.email)
-    );
-    if (existingIndex !== -1) {
-      const updated = {
-        ...current[existingIndex],
-        ...customerData,
-        updated_at: new Date().toISOString(),
-      };
-      current[existingIndex] = updated;
-      saveLocalCustomers(current);
-      return updated;
-    }
-
-    const updated = [newCustomer, ...current];
-    saveLocalCustomers(updated);
-    return newCustomer;
+    throw new Error('Database service is not configured.');
   },
 
   async getAll(): Promise<Customer[]> {
@@ -113,12 +114,28 @@ export const customerService = {
         return [];
       }
     }
-    return getLocalCustomers();
+    const current = getLocalCustomerProfile();
+    return current ? [current] : [];
   },
 
   async getById(id: string): Promise<Customer | null> {
-    const all = await this.getAll();
-    return all.find((c) => c.id === id) || null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data && !isFakeCustomer(data)) return data as Customer;
+      } catch (err) {
+        console.warn('Supabase customer getById error:', err);
+      }
+    }
+
+    const current = getLocalCustomerProfile();
+    return current && current.id === id ? current : null;
   },
 
   async update(id: string, updates: Partial<Customer>): Promise<Customer | null> {
@@ -131,22 +148,24 @@ export const customerService = {
           .select()
           .single();
         if (error) throw error;
-        if (data) return data as Customer;
+        if (data) {
+          saveLocalCustomerProfile(data as Customer);
+          return data as Customer;
+        }
       } catch (err) {
         console.warn('Supabase customer update error, updating locally:', err);
       }
     }
 
-    const current = getLocalCustomers();
-    const index = current.findIndex((c) => c.id === id);
-    if (index !== -1) {
-      current[index] = {
-        ...current[index],
+    const current = getLocalCustomerProfile();
+    if (current && current.id === id) {
+      const updated = {
+        ...current,
         ...updates,
         updated_at: new Date().toISOString(),
       };
-      saveLocalCustomers(current);
-      return current[index];
+      saveLocalCustomerProfile(updated);
+      return updated;
     }
     return null;
   },

@@ -1,13 +1,53 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root, html.light {
+  --background: #ffffff;
+  --foreground: #111111;
+  --card: #ffffff;
+  --card-foreground: #111111;
+  --header: #ffffff;
+  --sidebar: #ffffff;
+  --modal: #ffffff;
+  --border: #e5e7eb;
+  --muted: #f9fafb;
+  --muted-foreground: #6b7280;
+  --input: #ffffff;
+  --input-border: #d1d5db;
+  --ring: #06b6d4;
+  color-scheme: light;
+}
+
+html.dark, .dark {
+  --background: #050505;
+  --foreground: #ffffff;
+  --card: #111111;
+  --card-foreground: #ffffff;
+  --header: #0d0d0d;
+  --sidebar: #0d0d0d;
+  --modal: #111111;
+  --border: #272727;
+  --muted: #171717;
+  --muted-foreground: #9ca3af;
+  --input: #141414;
+  --input-border: #2e2e2e;
+  --ring: #06b6d4;
+  color-scheme: dark;
+}
+
 @layer base {
   html {
-    transition: background-color 300ms ease, color 300ms ease;
+    background-color: var(--background);
+    color: var(--foreground);
+    transition: background-color 200ms ease, color 200ms ease;
   }
 
   body {
+    background-color: var(--background);
+    color: var(--foreground);
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    transition: background-color 300ms ease, color 300ms ease;
+    transition: background-color 200ms ease, color 200ms ease;
   }
 
   h1, h2, h3, h4, h5, h6, .font-display {
@@ -24,13 +64,23 @@
   width: 8px;
   height: 8px;
 }
-::-webkit-scrollbar-track {
+html.light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+html.dark ::-webkit-scrollbar-track, .dark ::-webkit-scrollbar-track {
   background: #09090b;
 }
-::-webkit-scrollbar-thumb {
+html.dark ::-webkit-scrollbar-thumb, .dark ::-webkit-scrollbar-thumb {
   background: #27272a;
   border-radius: 4px;
 }
-::-webkit-scrollbar-thumb:hover {
+html.dark ::-webkit-scrollbar-thumb:hover, .dark ::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
 }

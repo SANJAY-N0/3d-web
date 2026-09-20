@@ -45,9 +45,9 @@ export const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ childr
 
   if (checking) {
     return (
-      <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center text-white p-4">
+      <div className="min-h-screen bg-slate-50 dark:bg-neutral-950 flex flex-col items-center justify-center text-slate-900 dark:text-white p-4 transition-colors">
         <div className="w-10 h-10 border-3 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-        <span className="mt-4 text-xs font-mono text-neutral-400 uppercase tracking-wider">
+        <span className="mt-4 text-xs font-mono text-slate-500 dark:text-neutral-400 uppercase tracking-wider">
           Verifying Administrator Privileges...
         </span>
       </div>

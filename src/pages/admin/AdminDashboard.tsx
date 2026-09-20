@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   Plus,
   RefreshCw,
+  Sliders,
 } from 'lucide-react';
 import { useToast } from '../../components/common/Toast';
 
@@ -120,6 +121,14 @@ export const AdminDashboard: React.FC = () => {
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add 3D Product</span>
+            </Link>
+
+            <Link
+              to="/admin/showcase"
+              className="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-indigo-600 dark:text-indigo-300 border border-slate-300 dark:border-neutral-800 text-xs font-semibold flex items-center gap-1.5 transition-all"
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span>Showcase</span>
             </Link>
 
             <Link

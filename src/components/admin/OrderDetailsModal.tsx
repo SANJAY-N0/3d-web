@@ -173,8 +173,8 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
 
           {/* Confirmation Action Form inside Modal */}
           {confirmAction && (
-            <div className="p-4 rounded-xl bg-neutral-950 border border-neutral-700 space-y-3 animate-in fade-in">
-              <h4 className="font-semibold text-sm text-white flex items-center gap-2">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-700 space-y-3 animate-in fade-in">
+              <h4 className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2">
                 {confirmAction === 'verify' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
                 {confirmAction === 'flag' && <Flag className="w-4 h-4 text-purple-400" />}
                 {confirmAction === 'reject' && <XCircle className="w-4 h-4 text-rose-400" />}
@@ -185,7 +185,7 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                   : 'Reject Payment Proof'}
               </h4>
 
-              <p className="text-neutral-400 text-xs">
+              <p className="text-slate-600 dark:text-neutral-400 text-xs">
                 {confirmAction === 'verify'
                   ? `Confirm that you received ₹${order.total_amount} in your UPI bank account for Transaction ID '${detectedTx || 'N/A'}'. This will move the order to PAYMENT_VERIFIED.`
                   : confirmAction === 'flag'
@@ -194,7 +194,7 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
               </p>
 
               <div>
-                <label className="text-[11px] font-mono text-neutral-400 block mb-1">
+                <label className="text-[11px] font-mono text-slate-600 dark:text-neutral-400 block mb-1">
                   Admin Note / Reason (Optional):
                 </label>
                 <input
@@ -206,14 +206,14 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                       ? 'e.g., Fake UTR / Amount not credited in account'
                       : 'e.g., Verified in HDFC bank app at 10:15 AM'
                   }
-                  className="w-full px-3 py-2 bg-neutral-900 border border-neutral-800 focus:border-cyan-500 rounded-lg text-xs text-white"
+                  className="w-full px-3 py-2 bg-white dark:bg-neutral-900 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-lg text-xs text-slate-900 dark:text-white"
                 />
               </div>
 
               <div className="flex justify-end gap-2 pt-1">
                 <button
                   onClick={() => setConfirmAction(null)}
-                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg"
+                  className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-300 rounded-lg"
                 >
                   Cancel
                 </button>

@@ -19,5 +19,6 @@ export const ROUTES = {
   ADMIN_DASHBOARD: '/admin/dashboard',
   ADMIN_ORDERS: '/admin/orders',
   ADMIN_PRODUCTS: '/admin/products',
+  ADMIN_SHOWCASE: '/admin/showcase',
   ADMIN_SETTINGS: '/admin/settings',
 } as const;

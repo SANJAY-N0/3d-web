@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, useLocation, Link } from 'react-router-dom';
 import { orderService } from '../services/orderService';
 import { Order, OrderStatus } from '../types';
 import { StatusBadge } from '../components/common/StatusBadge';
@@ -42,7 +42,14 @@ const TRACKING_STAGES: TrackingStage[] = [
   {
     id: 1,
     key: 'ORDER_CONFIRMED',
-    matchingStatuses: ['ORDER_PLACED', 'PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION', 'PAYMENT_CONFIRMED', 'PAYMENT_VERIFIED'],
+    matchingStatuses: [
+      'ORDER_PLACED',
+      'PENDING_PAYMENT',
+      'PAYMENT_PROCESSING',
+      'PENDING_PAYMENT_VERIFICATION',
+      'PAYMENT_CONFIRMED',
+      'PAYMENT_VERIFIED',
+    ],
     label: 'Order Confirmed',
     subtitle: 'Received & Verified',
     description: 'Order details and payment verified. Scheduled for 3D printing.',
@@ -79,14 +86,17 @@ const TRACKING_STAGES: TrackingStage[] = [
 
 export const TrackOrder: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const locationState = location.state as { orderId?: string; orderNumber?: string; order?: Order } | undefined;
   const { showToast } = useToast();
 
-  const [query, setQuery] = useState(searchParams.get('order') || '');
-  const [order, setOrder] = useState<Order | null>(null);
+  const initialSearch = searchParams.get('order') || locationState?.orderNumber || locationState?.orderId || '';
+  const [query, setQuery] = useState(initialSearch);
+  const [order, setOrder] = useState<Order | null>(locationState?.order || null);
   const [loading, setLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [hasSearched, setHasSearched] = useState(Boolean(locationState?.order || searchParams.get('order')));
 
-  // Helper to determine the 1-based index (1 to 6) of the current stage
+  // Helper to determine the 1-based index (1 to 4) of the current stage
   const calculateCurrentStageIndex = (status: OrderStatus): number => {
     for (let i = 0; i < TRACKING_STAGES.length; i++) {
       if (TRACKING_STAGES[i].matchingStatuses.includes(status)) {
@@ -101,9 +111,9 @@ export const TrackOrder: React.FC = () => {
     setLoading(true);
     setHasSearched(true);
     try {
-      const found = await orderService.searchOrders(searchTerm.trim());
-      if (found.length > 0) {
-        setOrder(found[0]);
+      const foundOrder = await orderService.trackOrder(searchTerm.trim());
+      if (foundOrder) {
+        setOrder(foundOrder);
       } else {
         setOrder(null);
         showToast('No matching order found. Please check the order number or phone.', 'info');
@@ -119,9 +129,14 @@ export const TrackOrder: React.FC = () => {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    if (orderParam) {
-      setQuery(orderParam);
-      executeSearch(orderParam);
+    const searchTarget = orderParam || locationState?.orderNumber || locationState?.orderId;
+    if (searchTarget) {
+      setQuery(searchTarget);
+      if (locationState?.order) {
+        setOrder(locationState.order);
+        setHasSearched(true);
+      }
+      executeSearch(searchTarget);
     }
   }, [orderParam]);
 

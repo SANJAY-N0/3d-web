@@ -4,6 +4,7 @@ import { Product } from '../types';
 import { productService } from '../services/productService';
 import { ProductCard } from '../components/product/ProductCard';
 import { ProductCardSkeleton } from '../components/common/Skeleton';
+import { HeroShowcase } from '../components/home/HeroShowcase';
 import {
   Sparkles,
   ArrowRight,
@@ -36,7 +37,7 @@ export const Home: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-12 items-center">
             {/* Left Content */}
-            <div className="lg:col-span-7 space-y-4 sm:space-y-6 text-center lg:text-left">
+            <div className="lg:col-span-6 space-y-4 sm:space-y-6 text-center lg:text-left">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 shadow-sm">
                 <span className="w-2 h-2 rounded-full bg-cyan-500 dark:bg-cyan-400 animate-pulse" />
                 <span className="text-[11px] sm:text-xs font-mono uppercase tracking-wider text-slate-700 dark:text-neutral-300">
@@ -95,33 +96,9 @@ export const Home: React.FC = () => {
               </div>
             </div>
 
-            {/* Right Hero Showcase Image */}
-            <div className="lg:col-span-5 relative">
-              <div className="relative mx-auto max-w-xs sm:max-w-md lg:max-w-none">
-                <div className="relative rounded-2xl sm:rounded-3xl p-1 bg-gradient-to-b from-cyan-500/30 via-indigo-500/20 to-slate-200 dark:to-neutral-800/30 shadow-2xl">
-                  <div className="relative rounded-xl sm:rounded-[22px] overflow-hidden bg-slate-100 dark:bg-neutral-950 aspect-square">
-                    <img
-                      src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80"
-                      alt="3D Printed Showcase"
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-
-                    <div className="absolute bottom-3 left-3 right-3 sm:bottom-4 sm:left-4 sm:right-4 bg-white/95 dark:bg-neutral-900/90 backdrop-blur-md p-3 rounded-xl border border-slate-200 dark:border-neutral-800 flex items-center justify-between shadow-lg">
-                      <div>
-                        <h4 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white">Custom 3D Products</h4>
-                        <p className="text-[10px] text-slate-500 dark:text-neutral-400 font-mono">Precision crafted</p>
-                      </div>
-                      <Link
-                        to="/products"
-                        className="px-3 py-1.5 rounded-lg bg-cyan-100 dark:bg-cyan-500/20 hover:bg-cyan-500 text-cyan-700 hover:text-white dark:text-cyan-300 dark:hover:text-neutral-950 text-xs font-semibold transition-all"
-                      >
-                        Browse
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            {/* Right Hero Showcase Image / Carousel */}
+            <div className="lg:col-span-6 relative w-full">
+              <HeroShowcase />
             </div>
           </div>
         </div>
