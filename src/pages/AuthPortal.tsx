@@ -26,9 +26,9 @@ export const AuthPortal: React.FC = () => {
 
   const [customerMode, setCustomerMode] = useState<'signin' | 'signup'>('signin');
 
-  // Customer Login Form State
-  const [customerIdentifier, setCustomerIdentifier] = useState('sanjay150724@gmail.com');
-  const [customerPassword, setCustomerPassword] = useState('customer123');
+  // Customer Login Form State (Clean: No hardcoded demo credentials)
+  const [customerIdentifier, setCustomerIdentifier] = useState('');
+  const [customerPassword, setCustomerPassword] = useState('');
 
   // Customer Signup Form State
   const [signupForm, setSignupForm] = useState({
@@ -170,17 +170,18 @@ export const AuthPortal: React.FC = () => {
     }
   };
 
-  // 1-Click Demo Customer Login
-  const handleDemoCustomerLogin = async () => {
-    setLoading(true);
-    setErrorMessage('');
+  // Handle Forgot Password
+  const handleForgotPassword = async () => {
+    if (!customerIdentifier.trim() || !customerIdentifier.includes('@')) {
+      showToast('Please enter your account email address above to reset password.', 'error');
+      return;
+    }
     try {
-      const demo = authService.getDemoCustomer();
-      await authService.loginCustomer(demo.email, 'customer123');
-      showToast(`Logged in as demo customer (${demo.name})`, 'success');
-      navigate(getResolvedCustomerRedirect());
+      setLoading(true);
+      await authService.resetCustomerPassword(customerIdentifier.trim());
+      showToast('Password reset link sent to your email address.', 'success');
     } catch (err: any) {
-      setErrorMessage(err.message);
+      showToast(err.message || 'Failed to send password reset email.', 'error');
     } finally {
       setLoading(false);
     }
@@ -236,12 +237,12 @@ export const AuthPortal: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-neutral-800 pb-4">
               <div>
                 <h2 className="font-display font-semibold text-lg text-slate-900 dark:text-white">
-                  {customerMode === 'signin' ? 'Customer Sign In (Existing User)' : 'Create Account (New User)'}
+                  {customerMode === 'signin' ? 'Customer Sign In' : 'Create Account'}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-neutral-400">
                   {customerMode === 'signin'
-                    ? 'Existing user login: verify credentials to continue to checkout'
-                    : 'New user registration: register once to proceed to checkout'}
+                    ? 'Enter your credentials to continue'
+                    : 'Register once to manage orders and checkout'}
                 </p>
               </div>
 
@@ -277,27 +278,7 @@ export const AuthPortal: React.FC = () => {
               </div>
             </div>
 
-            {/* Quick 1-Click Demo Banner */}
-            <div className="bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-500/20 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <span className="text-xs font-mono font-semibold text-cyan-800 dark:text-cyan-300 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Demo Customer Account
-                </span>
-                <p className="text-[11px] text-slate-600 dark:text-neutral-400">
-                  Auto-fill demo test customer (Sanjay Kumar - NIT)
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleDemoCustomerLogin}
-                disabled={loading}
-                className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-lg shrink-0 transition-colors shadow-sm cursor-pointer"
-              >
-                1-Click Demo Login
-              </button>
-            </div>
-
-            {/* Customer Sign In Form */}
+            {/* Customer Sign In Form - Pure Real Authentication */}
             {customerMode === 'signin' ? (
               <form onSubmit={handleCustomerLogin} className="space-y-4">
                 <div className="space-y-1.5">
@@ -309,7 +290,7 @@ export const AuthPortal: React.FC = () => {
                     required
                     value={customerIdentifier}
                     onChange={(e) => setCustomerIdentifier(e.target.value)}
-                    placeholder="sanjay150724@gmail.com or 9876543210"
+                    placeholder="e.g. name@example.com or 9876543210"
                     className="w-full px-4 py-3 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
                   />
                 </div>
@@ -317,15 +298,22 @@ export const AuthPortal: React.FC = () => {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1.5 font-semibold">
-                      <Lock className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Password (Optional / customer123)
+                      <Lock className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Password *
                     </label>
-                    <span className="text-[10px] text-slate-400 dark:text-neutral-500 font-mono">Default: customer123</span>
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+                    >
+                      Forgot Password?
+                    </button>
                   </div>
                   <input
                     type="password"
+                    required
                     value={customerPassword}
                     onChange={(e) => setCustomerPassword(e.target.value)}
-                    placeholder="Enter password"
+                    placeholder="Enter your password"
                     className="w-full px-4 py-3 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
                   />
                 </div>
@@ -336,7 +324,7 @@ export const AuthPortal: React.FC = () => {
                   className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-lg shadow-cyan-600/20 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <LogIn className="w-4 h-4" />
-                  <span>{loading ? 'Signing In...' : 'Sign In & Continue'}</span>
+                  <span>{loading ? 'Signing In...' : 'Login'}</span>
                 </button>
 
                 <div className="pt-1 text-center">
@@ -348,7 +336,7 @@ export const AuthPortal: React.FC = () => {
                     }}
                     className="text-xs text-cyan-700 dark:text-cyan-400 hover:underline font-medium cursor-pointer"
                   >
-                    New customer? Register here to complete your order →
+                    Don't have an account? Create Account →
                   </button>
                 </div>
               </form>

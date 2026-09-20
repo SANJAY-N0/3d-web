@@ -99,8 +99,8 @@ export const AdminDashboard: React.FC = () => {
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="font-display font-bold text-2xl sm:text-3xl text-white">Operations Dashboard</h1>
-            <p className="text-xs text-neutral-400 mt-1">
+            <h1 className="font-display font-bold text-2xl sm:text-3xl text-slate-900 dark:text-white">Operations Dashboard</h1>
+            <p className="text-xs text-slate-500 dark:text-neutral-400 mt-1">
               Live orders, manual UPI payment verification queue, and 3D print management.
             </p>
           </div>
@@ -108,7 +108,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               onClick={loadDashboardData}
-              className="p-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 transition-colors"
+              className="p-2.5 rounded-xl bg-white hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-neutral-300 border border-slate-300 dark:border-neutral-800 transition-colors"
               title="Refresh Data"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -116,7 +116,7 @@ export const AdminDashboard: React.FC = () => {
 
             <Link
               to="/admin/products"
-              className="px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-cyan-300 border border-neutral-800 text-xs font-semibold flex items-center gap-1.5 transition-all"
+              className="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-cyan-600 dark:text-cyan-300 border border-slate-300 dark:border-neutral-800 text-xs font-semibold flex items-center gap-1.5 transition-all"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add 3D Product</span>
@@ -124,7 +124,7 @@ export const AdminDashboard: React.FC = () => {
 
             <Link
               to="/admin/orders"
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all"
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all"
             >
               <span>View All Orders</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -134,16 +134,16 @@ export const AdminDashboard: React.FC = () => {
 
         {/* Action Alert if Pending Verifications exist */}
         {pendingVerificationCount > 0 && (
-          <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg shadow-amber-950/20">
+          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-500/20 rounded-xl text-amber-400">
+              <div className="p-2 bg-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400">
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
                 <h4 className="font-semibold text-sm">
                   {pendingVerificationCount} UPI Payment{pendingVerificationCount > 1 ? 's' : ''} Awaiting Manual Verification!
                 </h4>
-                <p className="text-xs text-amber-300/80">
+                <p className="text-xs text-amber-700 dark:text-amber-300/80">
                   Customers have uploaded transfer proof or reference IDs for verification.
                 </p>
               </div>
@@ -194,14 +194,14 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* Recent Orders Section */}
-        <div className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 space-y-5 shadow-xl">
-          <div className="flex items-center justify-between border-b border-neutral-800 pb-4">
+        <div className="bg-white dark:bg-neutral-900/60 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 space-y-5 shadow-sm dark:shadow-xl">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-neutral-800 pb-4">
             <div>
-              <h2 className="font-display font-bold text-lg text-white">Recent Customer Orders</h2>
-              <p className="text-xs text-neutral-400">Showing latest orders submitted through the portal</p>
+              <h2 className="font-display font-bold text-lg text-slate-900 dark:text-white">Recent Customer Orders</h2>
+              <p className="text-xs text-slate-500 dark:text-neutral-400">Showing latest orders submitted through the portal</p>
             </div>
 
-            <Link to="/admin/orders" className="text-xs font-mono text-cyan-400 hover:underline flex items-center gap-1">
+            <Link to="/admin/orders" className="text-xs font-mono text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 font-semibold">
               <span>View full list</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
@@ -210,7 +210,7 @@ export const AdminDashboard: React.FC = () => {
           {/* Orders Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-neutral-800 text-neutral-400 font-mono text-[11px] uppercase">
+              <thead className="border-b border-slate-200 dark:border-neutral-800 text-slate-500 dark:text-neutral-400 font-mono text-[11px] uppercase">
                 <tr>
                   <th className="pb-3 px-3">Order Ref</th>
                   <th className="pb-3 px-3">Customer</th>
@@ -221,24 +221,24 @@ export const AdminDashboard: React.FC = () => {
                   <th className="pb-3 px-3 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-800/60">
+              <tbody className="divide-y divide-slate-100 dark:divide-neutral-800/60">
                 {orders.slice(0, 6).map((ord) => (
-                  <tr key={ord.id} className="hover:bg-neutral-800/40 transition-colors">
-                    <td className="py-3.5 px-3 font-mono text-white font-semibold whitespace-nowrap">
+                  <tr key={ord.id} className="hover:bg-slate-50 dark:hover:bg-neutral-800/40 transition-colors">
+                    <td className="py-3.5 px-3 font-mono text-slate-900 dark:text-white font-semibold whitespace-nowrap">
                       {ord.order_number}
                     </td>
 
                     <td className="py-3.5 px-3 whitespace-nowrap">
-                      <div className="font-medium text-white">{ord.customer?.name || 'Customer'}</div>
-                      <div className="text-[11px] text-neutral-400 font-mono">{ord.customer?.phone}</div>
+                      <div className="font-medium text-slate-900 dark:text-white">{ord.customer?.name || 'Customer'}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-neutral-400 font-mono">{ord.customer?.phone}</div>
                     </td>
 
                     <td className="py-3.5 px-3 whitespace-nowrap">
-                      <div className="text-neutral-200 truncate max-w-[150px]">{ord.product?.name || '3D Product'}</div>
-                      <div className="text-[10px] text-cyan-400 font-mono">Qty: {ord.quantity}</div>
+                      <div className="text-slate-800 dark:text-neutral-200 truncate max-w-[150px]">{ord.product?.name || '3D Product'}</div>
+                      <div className="text-[10px] text-cyan-600 dark:text-cyan-400 font-mono">Qty: {ord.quantity}</div>
                     </td>
 
-                    <td className="py-3.5 px-3 font-mono text-white font-bold whitespace-nowrap">
+                    <td className="py-3.5 px-3 font-mono text-slate-900 dark:text-white font-bold whitespace-nowrap">
                       {formatINR(ord.total_amount)}
                     </td>
 
@@ -253,7 +253,7 @@ export const AdminDashboard: React.FC = () => {
                     <td className="py-3.5 px-3 text-right whitespace-nowrap">
                       <button
                         onClick={() => handleOpenOrder(ord)}
-                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-cyan-300 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition-colors border border-neutral-700"
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-cyan-700 dark:text-cyan-300 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition-colors border border-slate-300 dark:border-neutral-700 cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>Inspect</span>
@@ -265,7 +265,7 @@ export const AdminDashboard: React.FC = () => {
             </table>
 
             {orders.length === 0 && !loading && (
-              <div className="p-8 text-center text-neutral-500 font-mono text-xs">
+              <div className="p-8 text-center text-slate-400 dark:text-neutral-500 font-mono text-xs">
                 No orders recorded yet. Placed orders will appear here in real time.
               </div>
             )}

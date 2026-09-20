@@ -87,7 +87,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     location.pathname === path || (path !== '/admin/dashboard' && location.pathname.startsWith(path));
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-neutral-100 flex flex-col md:flex-row transition-colors">
       {/* 
         =============================================================================
         DESKTOP FIXED SIDEBAR
@@ -101,7 +101,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         =============================================================================
       */}
       <aside
-        className="hidden md:flex flex-col border-r border-neutral-800 bg-neutral-900/95 backdrop-blur-xl p-5 z-40 justify-between overflow-hidden select-none"
+        className="hidden md:flex flex-col border-r border-slate-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl p-5 z-40 justify-between overflow-hidden select-none"
         style={{
           width: '250px',
           height: '100vh',
@@ -115,14 +115,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           <div className="space-y-2">
             <Link to="/admin/dashboard" className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-indigo-600 p-0.5 flex items-center justify-center shadow-md">
-                <div className="w-full h-full bg-neutral-950 rounded-[6px] flex items-center justify-center">
+                <div className="w-full h-full bg-slate-950 dark:bg-neutral-950 rounded-[6px] flex items-center justify-center">
                   <Box className="w-4 h-4 text-cyan-400" />
                 </div>
               </div>
-              <span className="font-display font-bold text-base text-white tracking-wide">PRINTLAB 3D</span>
+              <span className="font-display font-bold text-base text-slate-900 dark:text-white tracking-wide">PRINTLAB 3D</span>
             </Link>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-950/80 text-indigo-300 border border-indigo-500/30 text-[10px] font-mono">
-              <ShieldCheck className="w-3 h-3 text-indigo-400" /> ADMIN OPERATIONS
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 text-[10px] font-mono">
+              <ShieldCheck className="w-3 h-3 text-indigo-500 dark:text-indigo-400" /> ADMIN OPERATIONS
             </div>
           </div>
 
@@ -137,11 +137,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                   to={item.path}
                   className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
                     active
-                      ? 'bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm'
-                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800/60'
+                      ? 'bg-cyan-50 dark:bg-gradient-to-r dark:from-cyan-500/20 dark:to-indigo-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30 shadow-sm'
+                      : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-neutral-800/60'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${active ? 'text-cyan-400' : 'text-neutral-500'}`} />
+                  <Icon className={`w-4 h-4 ${active ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400 dark:text-neutral-500'}`} />
                   <span>{item.label}</span>
                 </Link>
               );
@@ -150,10 +150,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         </div>
 
         {/* Bottom User info, Fullscreen control & actions */}
-        <div className="pt-4 border-t border-neutral-800/80 space-y-3">
+        <div className="pt-4 border-t border-slate-200 dark:border-neutral-800/80 space-y-3">
           <div className="px-2">
-            <span className="text-[10px] font-mono uppercase text-neutral-400 block">Logged In As</span>
-            <span className="text-xs font-medium text-neutral-200 truncate block font-mono">
+            <span className="text-[10px] font-mono uppercase text-slate-400 dark:text-neutral-400 block">Logged In As</span>
+            <span className="text-xs font-medium text-slate-700 dark:text-neutral-200 truncate block font-mono">
               {currentUser?.email || 'admin@printlab.io'}
             </span>
           </div>
@@ -163,18 +163,18 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
             <button
               type="button"
               onClick={toggleFullscreen}
-              className="flex items-center justify-between px-3 py-2 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs transition-colors border border-neutral-800 cursor-pointer shadow-sm"
+              className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 hover:text-slate-900 dark:text-neutral-300 dark:hover:text-white text-xs transition-colors border border-slate-200 dark:border-neutral-800 cursor-pointer shadow-sm"
               title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Enter Admin Fullscreen Mode'}
             >
               <span className="flex items-center gap-2 font-mono">
                 {isFullscreen ? (
-                  <Minimize2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <Minimize2 className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                 ) : (
-                  <Maximize2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <Maximize2 className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                 )}
                 <span>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Mode'}</span>
               </span>
-              <kbd className="px-1.5 py-0.5 text-[9px] font-mono bg-neutral-800 rounded border border-neutral-700 text-neutral-400">
+              <kbd className="px-1.5 py-0.5 text-[9px] font-mono bg-white dark:bg-neutral-800 rounded border border-slate-300 dark:border-neutral-700 text-slate-500 dark:text-neutral-400">
                 {isFullscreen ? 'ESC' : 'FULL'}
               </kbd>
             </button>
@@ -185,17 +185,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                 to="/"
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center justify-between px-3 py-2 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs transition-colors border border-neutral-800"
+                className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 hover:text-slate-900 dark:text-neutral-300 dark:hover:text-white text-xs transition-colors border border-slate-200 dark:border-neutral-800"
               >
                 <span className="flex items-center gap-2">
-                  <ExternalLink className="w-3.5 h-3.5 text-cyan-400" /> Customer Store
+                  <ExternalLink className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Customer Store
                 </span>
               </Link>
             )}
 
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs transition-colors border border-rose-900/30 cursor-pointer"
+              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs transition-colors border border-rose-200 dark:border-rose-900/30 cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" /> Logout
             </button>
@@ -204,24 +204,24 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       </aside>
 
       {/* Mobile Top Navbar */}
-      <div className="md:hidden border-b border-neutral-800 bg-neutral-950 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
+      <div className="md:hidden border-b border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-2">
-          <Box className="w-5 h-5 text-cyan-400" />
-          <span className="font-display font-bold text-sm text-white">PRINTLAB ADMIN</span>
+          <Box className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+          <span className="font-display font-bold text-sm text-slate-900 dark:text-white">PRINTLAB ADMIN</span>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={toggleFullscreen}
-            className="p-2 rounded-lg bg-neutral-900 text-neutral-300 border border-neutral-800 cursor-pointer"
+            className="p-2 rounded-lg bg-slate-100 dark:bg-neutral-900 text-slate-700 dark:text-neutral-300 border border-slate-200 dark:border-neutral-800 cursor-pointer"
             aria-label="Toggle Fullscreen"
           >
-            {isFullscreen ? <Minimize2 className="w-4 h-4 text-cyan-400" /> : <Maximize2 className="w-4 h-4 text-cyan-400" />}
+            {isFullscreen ? <Minimize2 className="w-4 h-4 text-cyan-600 dark:text-cyan-400" /> : <Maximize2 className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />}
           </button>
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-2 rounded-lg bg-neutral-900 text-neutral-300 border border-neutral-800"
+            className="p-2 rounded-lg bg-slate-100 dark:bg-neutral-900 text-slate-700 dark:text-neutral-300 border border-slate-200 dark:border-neutral-800"
             aria-label="Toggle Menu"
           >
             {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
@@ -231,23 +231,23 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
       {/* Mobile Menu Dropdown */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-neutral-900 border-b border-neutral-800 p-4 space-y-2">
+        <div className="md:hidden bg-white dark:bg-neutral-900 border-b border-slate-200 dark:border-neutral-800 p-4 space-y-2">
           {navItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}
               onClick={() => setMobileMenuOpen(false)}
               className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold ${
-                isActive(item.path) ? 'bg-cyan-500/20 text-cyan-300' : 'text-neutral-400'
+                isActive(item.path) ? 'bg-cyan-50 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300' : 'text-slate-600 dark:text-neutral-400'
               }`}
             >
               <item.icon className="w-4 h-4" />
               <span>{item.label}</span>
             </Link>
           ))}
-          <div className="pt-2 border-t border-neutral-800 flex justify-between items-center">
-            <Link to="/" className="text-xs text-cyan-400">View Store</Link>
-            <button onClick={handleLogout} className="text-xs text-rose-400">Logout</button>
+          <div className="pt-2 border-t border-slate-200 dark:border-neutral-800 flex justify-between items-center">
+            <Link to="/" className="text-xs text-cyan-600 dark:text-cyan-400">View Store</Link>
+            <button onClick={handleLogout} className="text-xs text-rose-600 dark:text-rose-400">Logout</button>
           </div>
         </div>
       )}
@@ -263,11 +263,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       */}
       <div className="flex-1 flex flex-col min-h-screen w-full md:ml-[250px] overflow-x-hidden">
         {/* Desktop Top Header Bar with Fullscreen Toggle */}
-        <div className="hidden md:flex items-center justify-between px-6 py-3 border-b border-neutral-800/80 bg-neutral-900/40 backdrop-blur-md sticky top-0 z-20">
-          <div className="flex items-center gap-2.5 text-xs font-mono text-neutral-400">
+        <div className="hidden md:flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-neutral-800/80 bg-white/80 dark:bg-neutral-900/40 backdrop-blur-md sticky top-0 z-20">
+          <div className="flex items-center gap-2.5 text-xs font-mono text-slate-500 dark:text-neutral-400">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-neutral-300 font-semibold">Admin Workspace</span>
-            <span className="text-neutral-600">•</span>
+            <span className="text-slate-800 dark:text-neutral-300 font-semibold">Admin Workspace</span>
+            <span className="text-slate-300 dark:text-neutral-600">•</span>
             <span>{isFullscreen ? 'Expanded Fullscreen View' : 'Standard View'}</span>
           </div>
 
@@ -275,17 +275,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
             <button
               type="button"
               onClick={toggleFullscreen}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-neutral-200 hover:text-white text-xs font-mono transition-colors border border-neutral-700/80 cursor-pointer shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 dark:bg-neutral-800/90 dark:hover:bg-neutral-700 text-slate-700 hover:text-slate-900 dark:text-neutral-200 dark:hover:text-white text-xs font-mono transition-colors border border-slate-300 dark:border-neutral-700/80 cursor-pointer shadow-sm"
               title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Enter Admin Fullscreen Mode'}
             >
               {isFullscreen ? (
                 <>
-                  <Minimize2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <Minimize2 className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                   <span>Exit Fullscreen</span>
                 </>
               ) : (
                 <>
-                  <Maximize2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <Maximize2 className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                   <span>Fullscreen</span>
                 </>
               )}

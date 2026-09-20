@@ -122,14 +122,6 @@ export const TrackOrder: React.FC = () => {
     if (orderParam) {
       setQuery(orderParam);
       executeSearch(orderParam);
-    } else {
-      // Auto-load the latest order for instant preview if no param
-      orderService.getAll().then((orders) => {
-        if (orders.length > 0 && !hasSearched) {
-          setOrder(orders[0]);
-          setQuery(orders[0].order_number);
-        }
-      });
     }
   }, [orderParam]);
 
@@ -512,6 +504,19 @@ export const TrackOrder: React.FC = () => {
               <Share2 className="w-3.5 h-3.5" />
               <span>Share Tracking Link</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Initial state before searching */}
+      {!hasSearched && !order && !loading && (
+        <div className="p-10 text-center bg-white dark:bg-neutral-900/40 border border-slate-200 dark:border-neutral-800 rounded-3xl space-y-4 shadow-sm max-w-lg mx-auto">
+          <Package className="w-10 h-10 text-cyan-600 dark:text-cyan-400 mx-auto" />
+          <div className="space-y-1">
+            <h3 className="font-display font-semibold text-base text-slate-900 dark:text-white">Real-Time Order Tracking</h3>
+            <p className="text-xs text-slate-500 dark:text-neutral-400">
+              Enter your Order ID (e.g. 3DP-2026-00124) or 10-digit Mobile Number in the box above to track live 3D printing and delivery updates.
+            </p>
           </div>
         </div>
       )}

@@ -79,14 +79,6 @@ function getGeminiClient(): GoogleGenAI | null {
 // In-memory registry to track submitted transaction IDs for duplicate detection
 const knownTransactionRegistry = new Map<string, { orderNumber: string; orderId: string; amount: number; date: string }>();
 
-// Seed some initial known transactions
-knownTransactionRegistry.set("429810482019", {
-  orderNumber: "3DP-2026-00088",
-  orderId: "ord-seed-01",
-  amount: 250,
-  date: "2026-09-18",
-});
-
 async function startServer() {
   const app = express();
   const PORT = 3000;

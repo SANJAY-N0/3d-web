@@ -1,6 +1,5 @@
 import { Order, OrderStatus, AdminStats } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { INITIAL_SAMPLE_ORDERS } from '../lib/seedData';
 import { generateOrderNumber } from '../lib/upiUtils';
 import { productService } from './productService';
 
@@ -9,13 +8,9 @@ const ORDERS_STORAGE_KEY = 'printlab_orders_data_v1';
 function getLocalOrders(): Order[] {
   try {
     const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(INITIAL_SAMPLE_ORDERS));
-      return INITIAL_SAMPLE_ORDERS;
-    }
-    return JSON.parse(raw);
+    return raw ? JSON.parse(raw) : [];
   } catch {
-    return INITIAL_SAMPLE_ORDERS;
+    return [];
   }
 }
 
@@ -23,7 +18,17 @@ function saveLocalOrders(orders: Order[]): void {
   localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
 }
 
+function normalizeOrder(o: any): Order {
+  return {
+    ...o,
+    payment: Array.isArray(o.payment) ? o.payment[0] || null : o.payment,
+  };
+}
+
 export const orderService = {
+  /**
+   * Fetch all orders from Supabase (pure real data, no fake mock fallback)
+   */
   async getAll(): Promise<Order[]> {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -37,21 +42,25 @@ export const orderService = {
           `)
           .order('created_at', { ascending: false });
 
-        if (error) throw error;
-        if (data && data.length > 0) {
-          const normalized = data.map((o: any) => ({
-            ...o,
-            payment: Array.isArray(o.payment) ? o.payment[0] || null : o.payment,
-          }));
-          return normalized as Order[];
+        if (error) {
+          console.error('Supabase orders query error:', error);
+          throw error;
         }
+
+        const normalized = (data || []).map(normalizeOrder);
+        saveLocalOrders(normalized);
+        return normalized;
       } catch (err) {
-        console.warn('Supabase orders fetch error, falling back to local:', err);
+        console.warn('Supabase orders fetch error, using local cache:', err);
+        return getLocalOrders();
       }
     }
     return getLocalOrders();
   },
 
+  /**
+   * Fetch order by ID or order number
+   */
   async getById(idOrOrderNumber: string): Promise<Order | null> {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -67,13 +76,7 @@ export const orderService = {
           .maybeSingle();
 
         if (error) throw error;
-        if (data) {
-          const normalized = {
-            ...data,
-            payment: Array.isArray((data as any).payment) ? (data as any).payment[0] || null : (data as any).payment,
-          };
-          return normalized as Order;
-        }
+        if (data) return normalizeOrder(data);
       } catch (err) {
         console.warn('Supabase single order fetch failed:', err);
       }
@@ -83,11 +86,17 @@ export const orderService = {
     return all.find((o) => o.id === idOrOrderNumber || o.order_number.toUpperCase() === idOrOrderNumber.toUpperCase()) || null;
   },
 
+  /**
+   * Fetch customer orders
+   */
   async getByCustomerId(customerId: string): Promise<Order[]> {
     const all = await this.getAll();
     return all.filter((o) => o.customer_id === customerId || o.customer?.id === customerId);
   },
 
+  /**
+   * Create new order with server price validation
+   */
   async create(orderPayload: {
     customer_id: string;
     product_id: string;
@@ -329,4 +338,3 @@ export const orderService = {
     });
   }
 };
-

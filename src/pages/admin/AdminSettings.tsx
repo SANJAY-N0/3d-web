@@ -4,7 +4,7 @@ import { isSupabaseConfigured } from '../../lib/supabase';
 import { DEFAULT_UPI_ID, DEFAULT_BUSINESS_NAME } from '../../lib/upiUtils';
 import { DEFAULT_CLOUDINARY_CLOUD_NAME, getCloudinaryCloudName, getCloudinaryDefaultFolder } from '../../lib/cloudinary';
 import { DEFAULT_SUPPORT_CONFIG, getSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
-import { resetAllStorageToSeed } from '../../services/productService';
+import { clearLocalCaches } from '../../services/productService';
 import { settingsService } from '../../services/settingsService';
 import {
   Settings,
@@ -130,10 +130,10 @@ export const AdminSettings: React.FC = () => {
     showToast('Cloudinary media settings saved successfully to database!', 'success');
   };
 
-  const handleResetData = () => {
-    if (window.confirm('Reset all demo products and orders to original seed state?')) {
-      resetAllStorageToSeed();
-      showToast('Reset data to default catalog!', 'success');
+  const handleClearCache = () => {
+    if (window.confirm('Clear local browser storage cache and re-sync directly from Supabase?')) {
+      clearLocalCaches();
+      showToast('Local cache cleared! Re-syncing from Supabase...', 'success');
       setTimeout(() => window.location.reload(), 800);
     }
   };
@@ -303,21 +303,21 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
       <div className="space-y-8 max-w-4xl">
         {/* Header */}
         <div>
-          <h1 className="font-display font-bold text-2xl sm:text-3xl text-white">System Settings & Integrations</h1>
-          <p className="text-xs text-neutral-400 mt-1">
+          <h1 className="font-display font-bold text-2xl sm:text-3xl text-slate-900 dark:text-white">System Settings & Integrations</h1>
+          <p className="text-xs text-slate-500 dark:text-neutral-400 mt-1">
             Configure merchant payment details, customer support contacts, Cloudinary media storage, and database parameters.
           </p>
         </div>
 
-        {/* Section 1: Customer Support Contact Settings (PART 3) */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
-          <div className="flex items-center gap-3 border-b border-neutral-800 pb-4">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+        {/* Section 1: Customer Support Contact Settings */}
+        <div className="bg-white dark:bg-neutral-900/80 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+          <div className="flex items-center gap-3 border-b border-slate-200 dark:border-neutral-800 pb-4">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
               <Headphones className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-display font-bold text-base text-white">Customer Support Contact Settings</h2>
-              <p className="text-xs text-neutral-400">
+              <h2 className="font-display font-bold text-base text-slate-900 dark:text-white">Customer Support Contact Settings</h2>
+              <p className="text-xs text-slate-500 dark:text-neutral-400">
                 Configured phone and WhatsApp numbers are displayed in the customer care section, footer, and WhatsApp support button.
               </p>
             </div>
@@ -326,8 +326,8 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
           <form onSubmit={handleSaveSupport} className="space-y-4 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1.5">
-                <label className="font-mono text-neutral-300 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-cyan-400" />
+                <label className="font-mono text-slate-700 dark:text-neutral-300 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                   <span>Primary Mobile Number *</span>
                 </label>
                 <input
@@ -336,14 +336,14 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
                   value={supportPhone}
                   onChange={(e) => setSupportPhone(e.target.value)}
                   placeholder="+91 98765 43210"
-                  className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 focus:border-cyan-500 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
-                <span className="text-[11px] text-neutral-500 block">Primary phone for direct customer calls</span>
+                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Primary phone for direct customer calls</span>
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-mono text-neutral-300 flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                <label className="font-mono text-slate-700 dark:text-neutral-300 flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                   <span>WhatsApp Number *</span>
                 </label>
                 <input
@@ -352,14 +352,14 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
                   value={supportWhatsapp}
                   onChange={(e) => setSupportWhatsapp(e.target.value)}
                   placeholder="+91 98765 43210"
-                  className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 focus:border-emerald-500 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-emerald-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 />
-                <span className="text-[11px] text-neutral-500 block">Opens WhatsApp chat link for customers</span>
+                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Opens WhatsApp chat link for customers</span>
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-mono text-neutral-300 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-neutral-400" />
+                <label className="font-mono text-slate-700 dark:text-neutral-300 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 dark:text-neutral-400" />
                   <span>Alternative Number (Optional)</span>
                 </label>
                 <input
@@ -367,15 +367,15 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
                   value={supportAltPhone}
                   onChange={(e) => setSupportAltPhone(e.target.value)}
                   placeholder="+91 XXXXXXXXXX"
-                  className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 focus:border-cyan-500 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
-                <span className="text-[11px] text-neutral-500 block">Optional fallback number (hidden if empty)</span>
+                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Optional fallback number (hidden if empty)</span>
               </div>
             </div>
 
             <button
               type="submit"
-              className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-semibold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-emerald-500/20 cursor-pointer transition-all"
+              className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-emerald-500/20 cursor-pointer transition-all"
             >
               <Save className="w-3.5 h-3.5" />
               <span>Save Support Settings</span>
@@ -384,14 +384,14 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
         </div>
 
         {/* Section 2: Merchant UPI Configuration */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
-          <div className="flex items-center gap-3 border-b border-neutral-800 pb-4">
-            <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
+        <div className="bg-white dark:bg-neutral-900/80 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+          <div className="flex items-center gap-3 border-b border-slate-200 dark:border-neutral-800 pb-4">
+            <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
               <QrCode className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-display font-bold text-base text-white">Merchant UPI Receiving Details</h2>
-              <p className="text-xs text-neutral-400">
+              <h2 className="font-display font-bold text-base text-slate-900 dark:text-white">Merchant UPI Receiving Details</h2>
+              <p className="text-xs text-slate-500 dark:text-neutral-400">
                 Configured values are dynamically encoded into customer QR codes, payment links, and copy actions.
               </p>
             </div>
@@ -400,35 +400,35 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
           <form onSubmit={handleSaveUPI} className="space-y-4 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="font-mono text-neutral-300">UPI ID / VPA Handle *</label>
+                <label className="font-mono text-slate-700 dark:text-neutral-300">UPI ID / VPA Handle *</label>
                 <input
                   type="text"
                   required
                   value={upiId}
                   onChange={(e) => setUpiId(e.target.value)}
                   placeholder="e.g. printlab3d@okhdfcbank"
-                  className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 focus:border-cyan-500 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
-                <span className="text-[11px] text-neutral-500 block">Accepts Google Pay, PhonePe, Paytm, BHIM VPAs</span>
+                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Accepts Google Pay, PhonePe, Paytm, BHIM VPAs</span>
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-mono text-neutral-300">UPI Payee Display Name *</label>
+                <label className="font-mono text-slate-700 dark:text-neutral-300">UPI Payee Display Name *</label>
                 <input
                   type="text"
                   required
                   value={merchantName}
                   onChange={(e) => setMerchantName(e.target.value)}
                   placeholder="PRINTLAB 3D"
-                  className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 focus:border-cyan-500 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
-                <span className="text-[11px] text-neutral-500 block">Name displayed to customers on payment confirmation</span>
+                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Name displayed to customers on payment confirmation</span>
               </div>
             </div>
 
             <button
               type="submit"
-              className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-semibold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-cyan-500/20 cursor-pointer transition-all"
+              className="px-6 py-2.5 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-cyan-500/20 cursor-pointer transition-all"
             >
               <Save className="w-3.5 h-3.5" />
               <span>Save UPI Settings</span>
@@ -437,22 +437,22 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
         </div>
 
         {/* Section 3: Cloudinary Media Configuration */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
-          <div className="flex items-center justify-between border-b border-neutral-800 pb-4">
+        <div className="bg-white dark:bg-neutral-900/80 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-neutral-800 pb-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400">
+              <div className="p-2 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400">
                 <Cloud className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="font-display font-bold text-base text-white">Cloudinary Media Configuration</h2>
-                <p className="text-xs text-neutral-400">
+                <h2 className="font-display font-bold text-base text-slate-900 dark:text-white">Cloudinary Media Configuration</h2>
+                <p className="text-xs text-slate-500 dark:text-neutral-400">
                   Configure Cloudinary parameters (Cloud Name, API Key, API Secret, URL, Folder) for 3D product showcase image delivery.
                 </p>
               </div>
             </div>
 
-            <span className="px-3 py-1 rounded-full text-xs font-mono font-medium flex items-center gap-1.5 border bg-sky-950/80 text-sky-300 border-sky-500/40">
-              <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />
+            <span className="px-3 py-1 rounded-full text-xs font-mono font-medium flex items-center gap-1.5 border bg-sky-50 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-500/40">
+              <CheckCircle2 className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
               <span>Cloud: {cloudName}</span>
             </span>
           </div>
@@ -460,38 +460,38 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
           <form onSubmit={handleSaveCloudinary} className="space-y-4 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="font-mono text-neutral-300">Cloud Name *</label>
+                <label className="font-mono text-slate-700 dark:text-neutral-300">Cloud Name *</label>
                 <input
                   type="text"
                   required
                   value={cloudName}
                   onChange={(e) => setCloudName(e.target.value)}
                   placeholder="e.g. jushiok7"
-                  className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 focus:border-cyan-500 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
-                <span className="text-[11px] text-neutral-500 block">Cloudinary account identifier</span>
+                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Cloudinary account identifier</span>
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-mono text-neutral-300">API Key *</label>
+                <label className="font-mono text-slate-700 dark:text-neutral-300">API Key *</label>
                 <input
                   type="text"
                   required
                   value={cloudinaryApiKey}
                   onChange={(e) => setCloudinaryApiKey(e.target.value)}
                   placeholder="e.g. 873981713524356"
-                  className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 focus:border-cyan-500 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
-                <span className="text-[11px] text-neutral-500 block">Cloudinary API Key</span>
+                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Cloudinary API Key</span>
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-mono text-neutral-300 flex items-center justify-between">
+                <label className="font-mono text-slate-700 dark:text-neutral-300 flex items-center justify-between">
                   <span>API Secret *</span>
                   <button
                     type="button"
                     onClick={() => setShowSecret(!showSecret)}
-                    className="text-[11px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+                    className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     {showSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                     <span>{showSecret ? 'Hide' : 'Show'}</span>
@@ -503,28 +503,28 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
                   value={cloudinaryApiSecret}
                   onChange={(e) => setCloudinaryApiSecret(e.target.value)}
                   placeholder="Enter Cloudinary API Secret"
-                  className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 focus:border-cyan-500 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
-                <span className="text-[11px] text-neutral-500 block">Stored securely for media uploads</span>
+                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Stored securely for media uploads</span>
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-mono text-neutral-300">Default Upload Folder</label>
+                <label className="font-mono text-slate-700 dark:text-neutral-300">Default Upload Folder</label>
                 <input
                   type="text"
                   value={uploadFolder}
                   onChange={(e) => setUploadFolder(e.target.value)}
                   placeholder="3d-printing/products"
-                  className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 focus:border-cyan-500 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
-                <span className="text-[11px] text-neutral-500 block">Root asset folder for uploaded showcase images</span>
+                <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Root asset folder for uploaded showcase images</span>
               </div>
             </div>
 
             {/* Cloudinary URL Preview */}
-            <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl space-y-1 font-mono">
-              <span className="text-[11px] text-neutral-500 block uppercase">Generated CLOUDINARY_URL Format</span>
-              <div className="text-sky-400 text-xs break-all select-all flex items-center justify-between gap-2">
+            <div className="p-3 bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl space-y-1 font-mono">
+              <span className="text-[11px] text-slate-400 dark:text-neutral-500 block uppercase">Generated CLOUDINARY_URL Format</span>
+              <div className="text-sky-600 dark:text-sky-400 text-xs break-all select-all flex items-center justify-between gap-2">
                 <span>{cloudinaryUrlPreview}</span>
                 <button
                   type="button"
@@ -532,7 +532,7 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
                     navigator.clipboard.writeText(`cloudinary://${cloudinaryApiKey}:${cloudinaryApiSecret}@${cloudName}`);
                     showToast('Full Cloudinary URL copied to clipboard!', 'success');
                   }}
-                  className="text-neutral-400 hover:text-white shrink-0 p-1 rounded hover:bg-neutral-800 cursor-pointer"
+                  className="text-slate-500 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white shrink-0 p-1 rounded hover:bg-slate-200 dark:hover:bg-neutral-800 cursor-pointer"
                   title="Copy full CLOUDINARY_URL"
                 >
                   <Copy className="w-3.5 h-3.5" />
@@ -542,7 +542,7 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
 
             <button
               type="submit"
-              className="px-6 py-2.5 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-semibold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-sky-500/20 cursor-pointer transition-all"
+              className="px-6 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-sky-500/20 cursor-pointer transition-all"
             >
               <Save className="w-3.5 h-3.5" />
               <span>Save Cloudinary Settings</span>
@@ -551,15 +551,15 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
         </div>
 
         {/* Section 4: Supabase Backend Status & Schema */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
-          <div className="flex items-center justify-between border-b border-neutral-800 pb-4">
+        <div className="bg-white dark:bg-neutral-900/80 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-neutral-800 pb-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400">
+              <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
                 <Database className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="font-display font-bold text-base text-white">Supabase Database Integration</h2>
-                <p className="text-xs text-neutral-400">
+                <h2 className="font-display font-bold text-base text-slate-900 dark:text-white">Supabase Database Integration</h2>
+                <p className="text-xs text-slate-500 dark:text-neutral-400">
                   Database parameters and complete schema definition
                 </p>
               </div>
@@ -568,18 +568,18 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
             <span
               className={`px-3 py-1 rounded-full text-xs font-mono font-medium flex items-center gap-1.5 border ${
                 isSupabaseConfigured
-                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                  : 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/40'
+                  : 'bg-cyan-50 dark:bg-cyan-950/80 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-500/40'
               }`}
             >
               {isSupabaseConfigured ? (
                 <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
                   <span>Supabase Connected</span>
                 </>
               ) : (
                 <>
-                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-500 dark:text-cyan-400" />
                   <span>Dual Persistence Active</span>
                 </>
               )}
@@ -588,63 +588,63 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
 
           {/* Safe Public Configuration Display */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div className="p-4 rounded-xl bg-neutral-950 border border-neutral-800 space-y-1 font-mono">
-              <span className="text-[11px] text-neutral-500 block uppercase">Project URL (Public)</span>
-              <span className="text-white text-xs truncate block select-all">{supabaseUrl}</span>
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 space-y-1 font-mono">
+              <span className="text-[11px] text-slate-400 dark:text-neutral-500 block uppercase">Project URL (Public)</span>
+              <span className="text-slate-900 dark:text-white text-xs truncate block select-all">{supabaseUrl}</span>
             </div>
 
-            <div className="p-4 rounded-xl bg-neutral-950 border border-neutral-800 space-y-1 font-mono">
-              <span className="text-[11px] text-neutral-500 block uppercase">Public Anon Key (Safe Client Key)</span>
-              <span className="text-neutral-300 text-xs truncate block">{maskedAnonKey}</span>
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 space-y-1 font-mono">
+              <span className="text-[11px] text-slate-400 dark:text-neutral-500 block uppercase">Public Anon Key (Safe Client Key)</span>
+              <span className="text-slate-700 dark:text-neutral-300 text-xs truncate block">{maskedAnonKey}</span>
             </div>
           </div>
 
-          <div className="space-y-3 text-xs text-neutral-300">
-            <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 font-mono text-[11px] text-neutral-400 space-y-1">
-              <div className="text-white font-semibold flex items-center justify-between">
+          <div className="space-y-3 text-xs text-slate-700 dark:text-neutral-300">
+            <div className="bg-slate-50 dark:bg-neutral-950 p-4 rounded-xl border border-slate-200 dark:border-neutral-800 font-mono text-[11px] text-slate-600 dark:text-neutral-400 space-y-1">
+              <div className="text-slate-900 dark:text-white font-semibold flex items-center justify-between">
                 <span>Database Migration Schema (`supabase/schema.sql`)</span>
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(sqlSchemaSnippet);
                     showToast('Complete SQL schema copied to clipboard!', 'success');
                   }}
-                  className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 text-xs cursor-pointer"
+                  className="text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 text-xs cursor-pointer"
                 >
                   <Copy className="w-3 h-3" /> Copy SQL
                 </button>
               </div>
-              <p className="text-neutral-500">
+              <p className="text-slate-400 dark:text-neutral-500">
                 Includes all tables: `products`, `orders` (with 10-minute session timestamps), `payments`, `customers`, `admins`, `settings`, and RLS policies.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Section 5: Data Maintenance */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-4 shadow-xl">
-          <div className="flex items-center gap-3 border-b border-neutral-800 pb-4">
-            <div className="p-2 rounded-xl bg-rose-500/10 text-rose-400">
+        {/* Section 5: Local Cache Maintenance */}
+        <div className="bg-white dark:bg-neutral-900/80 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-4 shadow-xl">
+          <div className="flex items-center gap-3 border-b border-slate-200 dark:border-neutral-800 pb-4">
+            <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
               <RefreshCw className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-display font-bold text-base text-white">Catalog & Mock Data Reset</h2>
-              <p className="text-xs text-neutral-400">
-                Restore the default 3D product catalog and sample order state for demonstration.
+              <h2 className="font-display font-bold text-base text-slate-900 dark:text-white">Local Cache Maintenance</h2>
+              <p className="text-xs text-slate-500 dark:text-neutral-400">
+                Clear locally cached browser data to force a full re-sync with Supabase tables.
               </p>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <p className="text-xs text-neutral-400 max-w-md">
-              Clears local modifications and reloads the default 3D product models.
+            <p className="text-xs text-slate-500 dark:text-neutral-400 max-w-md">
+              Clears local offline browser cache. All product catalog, order, and customer records remain safe in your Supabase database.
             </p>
 
             <button
-              onClick={handleResetData}
-              className="px-5 py-2.5 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              onClick={handleClearCache}
+              className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-200 border border-slate-300 dark:border-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Reset to Seed Data</span>
+              <span>Clear Local Cache</span>
             </button>
           </div>
         </div>
