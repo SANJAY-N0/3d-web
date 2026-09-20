@@ -64,7 +64,7 @@ export const OrderSuccess: React.FC = () => {
     );
   }
 
-  const orderNum = order?.order_number || '3DP-2026-00124';
+  const orderNum = order?.order_number || id || '';
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">

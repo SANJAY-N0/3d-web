@@ -153,11 +153,18 @@ export const Home: React.FC = () => {
             <ProductCardSkeleton />
             <ProductCardSkeleton />
           </div>
-        ) : (
+        ) : featuredProducts.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
             {featuredProducts.map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}
+          </div>
+        ) : (
+          <div className="p-8 text-center bg-white dark:bg-neutral-900/40 border border-slate-200 dark:border-neutral-800 rounded-2xl space-y-2 shadow-sm">
+            <p className="text-xs text-slate-500 dark:text-neutral-400">No featured products available at this time.</p>
+            <Link to="/products" className="text-xs text-cyan-600 dark:text-cyan-400 font-mono hover:underline inline-block">
+              Browse All Products →
+            </Link>
           </div>
         )}
       </section>

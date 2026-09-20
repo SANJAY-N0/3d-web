@@ -26,9 +26,9 @@ export const StatCard: React.FC<StatCardProps> = ({
   };
 
   return (
-    <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-5 hover:border-neutral-700 transition-all shadow-xl flex flex-col justify-between">
+    <div className="bg-white dark:bg-neutral-900/80 border border-slate-200 dark:border-neutral-800 rounded-2xl p-5 hover:border-slate-300 dark:hover:border-neutral-700 transition-all shadow-sm dark:shadow-xl flex flex-col justify-between">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-mono uppercase tracking-wider text-neutral-400 font-medium">
+        <span className="text-xs font-mono uppercase tracking-wider text-slate-500 dark:text-neutral-400 font-medium">
           {title}
         </span>
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center border ${accentColors[accent]}`}>
@@ -37,11 +37,11 @@ export const StatCard: React.FC<StatCardProps> = ({
       </div>
 
       <div className="mt-4">
-        <div className="font-display font-bold text-2xl sm:text-3xl text-white">
+        <div className="font-display font-bold text-2xl sm:text-3xl text-slate-900 dark:text-white">
           {value}
         </div>
         {subtitle && (
-          <p className="text-xs text-neutral-400 mt-1 font-mono">
+          <p className="text-xs text-slate-500 dark:text-neutral-400 mt-1 font-mono">
             {subtitle}
           </p>
         )}

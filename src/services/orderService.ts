@@ -1,29 +1,53 @@
 import { Order, OrderStatus, AdminStats } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { INITIAL_SAMPLE_ORDERS } from '../lib/seedData';
 import { generateOrderNumber } from '../lib/upiUtils';
 import { productService } from './productService';
 
 const ORDERS_STORAGE_KEY = 'printlab_orders_data_v1';
 
+const FAKE_ORDER_NUMBERS = new Set(['3DP-2026-00124', '3DP-2026-00125', '3DP-2026-00126']);
+const FAKE_CUSTOMER_NAMES = new Set(['sanjay kumar', 'priya sharma', 'aditya varma']);
+
+function isFakeOrder(o: any): boolean {
+  if (!o) return true;
+  if (o.order_number && FAKE_ORDER_NUMBERS.has(o.order_number.toUpperCase())) return true;
+  if (o.customer?.name && FAKE_CUSTOMER_NAMES.has(o.customer.name.trim().toLowerCase())) return true;
+  if (o.product?.name && o.product.name.trim().toLowerCase() === 'nothing') return true;
+  if (o.product_id === 'nothing' || o.id === 'nothing') return true;
+  return false;
+}
+
 function getLocalOrders(): Order[] {
   try {
     const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(INITIAL_SAMPLE_ORDERS));
-      return INITIAL_SAMPLE_ORDERS;
+    if (!raw) return [];
+    const parsed: any[] = JSON.parse(raw);
+    const cleaned = parsed.filter((o) => !isFakeOrder(o)).map(normalizeOrder);
+    if (cleaned.length !== parsed.length) {
+      saveLocalOrders(cleaned);
     }
-    return JSON.parse(raw);
+    return cleaned;
   } catch {
-    return INITIAL_SAMPLE_ORDERS;
+    return [];
   }
 }
 
 function saveLocalOrders(orders: Order[]): void {
-  localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  const cleaned = orders.filter((o) => !isFakeOrder(o));
+  localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(cleaned));
+}
+
+function normalizeOrder(o: any): Order {
+  return {
+    ...o,
+    payment: Array.isArray(o.payment) ? o.payment[0] || null : o.payment,
+  };
 }
 
 export const orderService = {
+  /**
+   * Fetch all orders from Supabase (pure real data, no fake mock fallback)
+   */
   async getAll(): Promise<Order[]> {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -37,15 +61,25 @@ export const orderService = {
           `)
           .order('created_at', { ascending: false });
 
-        if (error) throw error;
-        if (data && data.length > 0) return data as Order[];
+        if (error) {
+          console.error('Supabase orders query error:', error);
+          throw error;
+        }
+
+        const normalized = (data || []).map(normalizeOrder).filter((o) => !isFakeOrder(o));
+        saveLocalOrders(normalized);
+        return normalized;
       } catch (err) {
-        console.warn('Supabase orders fetch error, falling back to local:', err);
+        console.warn('Supabase orders fetch error, using local cache:', err);
+        return getLocalOrders();
       }
     }
     return getLocalOrders();
   },
 
+  /**
+   * Fetch order by ID or order number
+   */
   async getById(idOrOrderNumber: string): Promise<Order | null> {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -61,7 +95,7 @@ export const orderService = {
           .maybeSingle();
 
         if (error) throw error;
-        if (data) return data as Order;
+        if (data) return normalizeOrder(data);
       } catch (err) {
         console.warn('Supabase single order fetch failed:', err);
       }
@@ -71,11 +105,17 @@ export const orderService = {
     return all.find((o) => o.id === idOrOrderNumber || o.order_number.toUpperCase() === idOrOrderNumber.toUpperCase()) || null;
   },
 
+  /**
+   * Fetch customer orders
+   */
   async getByCustomerId(customerId: string): Promise<Order[]> {
     const all = await this.getAll();
     return all.filter((o) => o.customer_id === customerId || o.customer?.id === customerId);
   },
 
+  /**
+   * Create new order with server price validation
+   */
   async create(orderPayload: {
     customer_id: string;
     product_id: string;
@@ -87,6 +127,13 @@ export const orderService = {
     product?: Order['product'];
   }): Promise<Order> {
     const orderNumber = generateOrderNumber();
+    const sessionCreatedAt = new Date().toISOString();
+    // 10-minute payment session window
+    const sessionExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+    // Price calculation integrity enforcement: total_amount = unit_price * quantity
+    const validatedTotal = Number(orderPayload.unit_price) * Number(orderPayload.quantity);
+
     const newOrder: Order = {
       id: 'ord-' + Date.now(),
       order_number: orderNumber,
@@ -94,20 +141,22 @@ export const orderService = {
       product_id: orderPayload.product_id,
       quantity: orderPayload.quantity,
       unit_price: orderPayload.unit_price,
-      total_amount: orderPayload.total_amount,
+      total_amount: validatedTotal,
       customization: orderPayload.customization,
       order_status: 'PENDING_PAYMENT',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      payment_session_created_at: sessionCreatedAt,
+      payment_session_expires_at: sessionExpiresAt,
+      created_at: sessionCreatedAt,
+      updated_at: sessionCreatedAt,
       customer: orderPayload.customer,
       product: orderPayload.product,
       payment: {
         id: 'pay-' + Date.now(),
         order_id: 'ord-' + Date.now(),
-        amount: orderPayload.total_amount,
+        amount: validatedTotal,
         payment_status: 'PENDING',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: sessionCreatedAt,
+        updated_at: sessionCreatedAt,
       },
     };
 
@@ -121,9 +170,11 @@ export const orderService = {
             product_id: orderPayload.product_id,
             quantity: orderPayload.quantity,
             unit_price: orderPayload.unit_price,
-            total_amount: orderPayload.total_amount,
+            total_amount: validatedTotal,
             customization: orderPayload.customization,
             order_status: 'PENDING_PAYMENT',
+            payment_session_created_at: sessionCreatedAt,
+            payment_session_expires_at: sessionExpiresAt,
           }])
           .select()
           .single();
@@ -132,10 +183,10 @@ export const orderService = {
         if (data) {
           newOrder.id = data.id;
           newOrder.order_number = data.order_number;
-          // also initialize payment row
+          // also initialize payment row in Supabase
           await supabase.from('payments').insert([{
             order_id: data.id,
-            amount: orderPayload.total_amount,
+            amount: validatedTotal,
             payment_status: 'PENDING',
           }]);
         }
@@ -191,6 +242,90 @@ export const orderService = {
     return current[index];
   },
 
+  /**
+   * Delete an order
+   */
+  async delete(orderId: string): Promise<void> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('orders').delete().eq('id', orderId);
+      } catch (err) {
+        console.warn('Supabase order delete error:', err);
+      }
+    }
+    const current = getLocalOrders();
+    const filtered = current.filter((o) => o.id !== orderId && o.order_number !== orderId);
+    saveLocalOrders(filtered);
+  },
+
+  /**
+   * Ensures an order has a valid 10-minute payment session and evaluates expiration
+   */
+  async ensurePaymentSession(orderId: string): Promise<Order | null> {
+    const order = await this.getById(orderId);
+    if (!order) return null;
+
+    let modified = false;
+    let currentOrder = { ...order };
+
+    // Initialize session if not present
+    if (!currentOrder.payment_session_expires_at) {
+      const createdAt = currentOrder.created_at || new Date().toISOString();
+      const expiresAt = new Date(new Date(createdAt).getTime() + 10 * 60 * 1000).toISOString();
+      currentOrder.payment_session_created_at = createdAt;
+      currentOrder.payment_session_expires_at = expiresAt;
+      modified = true;
+    }
+
+    // Check if session has expired
+    const expiresAtTime = new Date(currentOrder.payment_session_expires_at).getTime();
+    if (
+      Date.now() >= expiresAtTime &&
+      (currentOrder.order_status === 'PENDING_PAYMENT' || currentOrder.order_status === 'ORDER_PLACED')
+    ) {
+      currentOrder.order_status = 'PAYMENT_EXPIRED';
+      modified = true;
+    }
+
+    if (modified) {
+      const current = getLocalOrders();
+      const index = current.findIndex((o) => o.id === currentOrder.id || o.order_number === currentOrder.order_number);
+      if (index !== -1) {
+        current[index] = {
+          ...current[index],
+          ...currentOrder,
+          updated_at: new Date().toISOString(),
+        };
+        saveLocalOrders(current);
+      }
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase
+            .from('orders')
+            .update({
+              order_status: currentOrder.order_status,
+              payment_session_created_at: currentOrder.payment_session_created_at,
+              payment_session_expires_at: currentOrder.payment_session_expires_at,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', currentOrder.id);
+        } catch (err) {
+          console.warn('Supabase session sync error:', err);
+        }
+      }
+    }
+
+    return currentOrder;
+  },
+
+  /**
+   * Immediately expires the payment session and cancels order payment window
+   */
+  async expirePaymentSession(orderId: string): Promise<Order> {
+    return this.updateStatus(orderId, 'PAYMENT_EXPIRED');
+  },
+
   async getAdminStats(): Promise<AdminStats> {
     const [allProducts, allOrders] = await Promise.all([
       productService.getAll(),
@@ -238,4 +373,3 @@ export const orderService = {
     });
   }
 };
-

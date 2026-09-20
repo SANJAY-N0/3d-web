@@ -1,6 +1,24 @@
 import { CloudinaryUploadResponse, CloudinaryConfigStatus } from '../types';
 
-export const CLOUDINARY_CLOUD_NAME = 'jushiok7';
+export const DEFAULT_CLOUDINARY_CLOUD_NAME = 'jushiok7';
+
+export function getCloudinaryCloudName(): string {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('printlab_cloudinary_cloud_name');
+    if (stored && stored.trim()) return stored.trim();
+  }
+  return DEFAULT_CLOUDINARY_CLOUD_NAME;
+}
+
+export function getCloudinaryDefaultFolder(): string {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('printlab_cloudinary_folder');
+    if (stored && stored.trim()) return stored.trim();
+  }
+  return '3d-printing/products';
+}
+
+export const CLOUDINARY_CLOUD_NAME = DEFAULT_CLOUDINARY_CLOUD_NAME;
 export const CLOUDINARY_BASE_URL = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 
 export interface ImageTransformOptions {

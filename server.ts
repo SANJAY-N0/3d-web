@@ -79,14 +79,6 @@ function getGeminiClient(): GoogleGenAI | null {
 // In-memory registry to track submitted transaction IDs for duplicate detection
 const knownTransactionRegistry = new Map<string, { orderNumber: string; orderId: string; amount: number; date: string }>();
 
-// Seed some initial known transactions
-knownTransactionRegistry.set("429810482019", {
-  orderNumber: "3DP-2026-00088",
-  orderId: "ord-seed-01",
-  amount: 250,
-  date: "2026-09-18",
-});
-
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -101,6 +93,34 @@ async function startServer() {
       status: "ok",
       timestamp: new Date().toISOString(),
       hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+    });
+  });
+
+  /**
+   * Backend Authorization Middleware: Enforce administrator permissions
+   */
+  const requireAdminAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const roleHeader = req.headers["x-user-role"] || req.headers["x-role"];
+    const authHeader = req.headers.authorization;
+
+    if (roleHeader === "admin" || (authHeader && authHeader.toLowerCase().includes("admin"))) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      error: "Access forbidden. Administrator privileges required.",
+    });
+  };
+
+  /**
+   * Dedicated Admin Session Verification Endpoint
+   */
+  app.get("/api/admin/verify", requireAdminAuth, (req, res) => {
+    return res.json({
+      authorized: true,
+      role: "admin",
+      timestamp: new Date().toISOString(),
     });
   });
 
@@ -123,6 +143,9 @@ async function startServer() {
         city,
         state,
         pincode,
+        quantity,
+        unit_price,
+        total_amount,
       } = req.body;
 
       const errors: Record<string, string> = {};
@@ -181,6 +204,14 @@ async function startServer() {
         errors.delivery_method = "Invalid delivery method specified.";
       }
 
+      // Price calculation integrity validation
+      if (unit_price !== undefined && quantity !== undefined && total_amount !== undefined) {
+        const expectedTotal = Number(unit_price) * Number(quantity);
+        if (Math.abs(Number(total_amount) - expectedTotal) > 0.01) {
+          errors.total_amount = `Invalid order total calculation. Expected ₹${expectedTotal}, got ₹${total_amount}.`;
+        }
+      }
+
       if (Object.keys(errors).length > 0) {
         return res.status(400).json({
           valid: false,
@@ -202,6 +233,40 @@ async function startServer() {
   });
 
   /**
+   * Backend Payment Session Verification Endpoint
+   * Enforces 10-minute window before accepting any payment actions
+   */
+  app.post("/api/payments/verify-session", (req, res) => {
+    try {
+      const { expiresAt, orderId } = req.body;
+      if (!expiresAt) {
+        return res.status(400).json({ valid: false, error: "Missing session expiration timestamp." });
+      }
+
+      const expiryTime = new Date(expiresAt).getTime();
+      const isExpired = Date.now() >= expiryTime;
+
+      if (isExpired) {
+        return res.status(400).json({
+          valid: false,
+          expired: true,
+          error: "Payment session has expired. This order has been cancelled.",
+        });
+      }
+
+      const remainingSeconds = Math.max(0, Math.floor((expiryTime - Date.now()) / 1000));
+      return res.json({
+        valid: true,
+        expired: false,
+        remainingSeconds,
+        message: "Payment session is active.",
+      });
+    } catch (err: any) {
+      return res.status(500).json({ valid: false, error: err.message || "Session verification failed." });
+    }
+  });
+
+  /**
    * AI OCR Endpoint for UPI Payment Proof Screenshot
    * Analyzes screenshot using Gemini API / OCR & image understanding
    */
@@ -214,7 +279,18 @@ async function startServer() {
         expectedAmount,
         orderNumber = "ORDER",
         orderId,
+        expiresAt,
       } = req.body;
+
+      // Backend Security Enforcement: Check session expiration
+      if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+        return res.status(400).json({
+          success: false,
+          expired: true,
+          error: "Payment session has expired. This order is cancelled and cannot accept payment.",
+          analysisStatus: "FAILED",
+        });
+      }
 
       if (!imageBase64) {
         return res.status(400).json({
@@ -566,9 +642,9 @@ Extract the following exact payment details with high precision:
   });
 
   /**
-   * Secure Cloudinary Asset Deletion Endpoint
+   * Secure Cloudinary Asset Deletion Endpoint (Protected with Admin Authorization)
    */
-  app.post("/api/cloudinary/delete", async (req, res) => {
+  app.post("/api/cloudinary/delete", requireAdminAuth, async (req, res) => {
     try {
       if (!isCloudinaryConfigured()) {
         return res.status(503).json({

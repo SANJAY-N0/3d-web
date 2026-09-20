@@ -1,6 +1,5 @@
 import { Product } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { INITIAL_PRODUCTS } from '../lib/seedData';
 
 const PRODUCTS_STORAGE_KEY = 'printlab_products_data_v1';
 
@@ -21,40 +20,40 @@ function normalizeProduct(p: any): Product {
   };
 }
 
+function isFakeProduct(p: any): boolean {
+  if (!p || !p.name) return true;
+  const name = p.name.trim().toLowerCase();
+  if (name === 'nothing' || name === 'test' || name === 'dummy') return true;
+  if (p.description && p.description.includes('lksnfoadfnfasnfpa')) return true;
+  if (p.main_image && (p.main_image.includes('Screenshot') || p.main_image.includes('Ishan') || p.main_image.includes('26,200'))) return true;
+  if (p.image_url && (p.image_url.includes('Screenshot') || p.image_url.includes('Ishan') || p.image_url.includes('26,200'))) return true;
+  return false;
+}
+
 function getLocalProducts(): Product[] {
   try {
     const raw = localStorage.getItem(PRODUCTS_STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(INITIAL_PRODUCTS));
-      return INITIAL_PRODUCTS.map(normalizeProduct);
-    }
+    if (!raw) return [];
     const parsed: any[] = JSON.parse(raw);
-    return parsed.map((item) => {
-      const seedMatch = INITIAL_PRODUCTS.find((p) => p.id === item.id || p.slug === item.slug);
-      // Migrate old Unsplash seed URLs to Cloudinary if found
-      if (seedMatch && (item.image_url?.includes('unsplash.com') || !item.main_image)) {
-        return normalizeProduct({
-          ...item,
-          image_url: seedMatch.image_url,
-          main_image: seedMatch.main_image,
-          public_id: seedMatch.public_id,
-          gallery_urls: seedMatch.gallery_urls,
-          gallery_images: seedMatch.gallery_images,
-          gallery_public_ids: seedMatch.gallery_public_ids,
-        });
-      }
-      return normalizeProduct(item);
-    });
+    const cleaned = parsed.filter((p) => !isFakeProduct(p)).map(normalizeProduct);
+    if (cleaned.length !== parsed.length) {
+      saveLocalProducts(cleaned);
+    }
+    return cleaned;
   } catch {
-    return INITIAL_PRODUCTS.map(normalizeProduct);
+    return [];
   }
 }
 
 function saveLocalProducts(products: Product[]): void {
-  localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(products));
+  const cleaned = products.filter((p) => !isFakeProduct(p));
+  localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(cleaned));
 }
 
 export const productService = {
+  /**
+   * Fetch all products from Supabase (pure real data, no fake mock fallback)
+   */
   async getAll(): Promise<Product[]> {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -63,20 +62,34 @@ export const productService = {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (error) throw error;
-        if (data && data.length > 0) return data as Product[];
+        if (error) {
+          console.error('Supabase products query error:', error);
+          throw error;
+        }
+
+        // Return real data from Supabase (empty array if none exist)
+        const products = (data || []).map(normalizeProduct).filter((p) => !isFakeProduct(p));
+        saveLocalProducts(products);
+        return products;
       } catch (err) {
-        console.warn('Supabase products fetch failed, falling back to storage:', err);
+        console.warn('Supabase products fetch failed, using local cache:', err);
+        return getLocalProducts();
       }
     }
     return getLocalProducts();
   },
 
+  /**
+   * Fetch featured products for homepage
+   */
   async getFeatured(): Promise<Product[]> {
     const all = await this.getAll();
     return all.filter((p) => p.is_featured && p.is_available);
   },
 
+  /**
+   * Fetch single product by slug or id
+   */
   async getBySlugOrId(idOrSlug: string): Promise<Product | null> {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -87,7 +100,8 @@ export const productService = {
           .maybeSingle();
 
         if (error) throw error;
-        if (data) return data as Product;
+        if (data) return normalizeProduct(data);
+        return null;
       } catch (err) {
         console.warn('Supabase single product fetch failed:', err);
       }
@@ -96,6 +110,9 @@ export const productService = {
     return all.find((p) => p.id === idOrSlug || p.slug === idOrSlug) || null;
   },
 
+  /**
+   * Create new product in Supabase
+   */
   async create(productData: Omit<Product, 'id' | 'created_at' | 'updated_at'>): Promise<Product> {
     const newProduct: Product = {
       ...productData,
@@ -108,7 +125,7 @@ export const productService = {
       try {
         const { data, error } = await supabase.from('products').insert([productData]).select().single();
         if (error) throw error;
-        if (data) return data as Product;
+        if (data) return normalizeProduct(data);
       } catch (err) {
         console.warn('Supabase product insert failed, saving locally:', err);
       }
@@ -120,6 +137,9 @@ export const productService = {
     return newProduct;
   },
 
+  /**
+   * Update existing product in Supabase
+   */
   async update(id: string, updates: Partial<Product>): Promise<Product> {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -131,7 +151,7 @@ export const productService = {
           .single();
 
         if (error) throw error;
-        if (data) return data as Product;
+        if (data) return normalizeProduct(data);
       } catch (err) {
         console.warn('Supabase product update failed:', err);
       }
@@ -151,6 +171,9 @@ export const productService = {
     return updatedProduct;
   },
 
+  /**
+   * Delete product in Supabase
+   */
   async delete(id: string): Promise<void> {
     if (isSupabaseConfigured && supabase) {
       try {
@@ -166,15 +189,20 @@ export const productService = {
     saveLocalProducts(updated);
   },
 
-  async resetToSampleData(): Promise<Product[]> {
-    saveLocalProducts(INITIAL_PRODUCTS);
-    return INITIAL_PRODUCTS;
+  /**
+   * Clear all locally cached products
+   */
+  async clearLocalProductsCache(): Promise<Product[]> {
+    localStorage.removeItem(PRODUCTS_STORAGE_KEY);
+    return this.getAll();
   }
 };
 
-export function resetAllStorageToSeed(): void {
+export function clearLocalCaches(): void {
   localStorage.removeItem('printlab_products_data_v1');
   localStorage.removeItem('printlab_orders_data_v1');
   localStorage.removeItem('printlab_customers_data_v1');
 }
 
+// Backward-compatibility alias
+export const resetAllStorageToSeed = clearLocalCaches;

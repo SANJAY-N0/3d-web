@@ -119,6 +119,45 @@ export const OrderPage: React.FC = () => {
   useEffect(() => {
     window.scrollTo(0, 0);
 
+    // Enforce authentication before checkout
+    if (!authService.isCustomerAuthenticated()) {
+      showToast('Please sign in or register to complete your 3D print order.', 'info');
+      const params = new URLSearchParams();
+      if (targetProductId) params.set('productId', targetProductId);
+      if (selectedColor) params.set('selectedColor', selectedColor);
+      if (quantity) params.set('quantity', String(quantity));
+      const qs = params.toString();
+      navigate(`/login?redirect=/order${qs ? `&${qs}` : ''}`);
+      return;
+    }
+
+    // Sync latest customer profile into checkout form
+    const currentCust = authService.getCurrentCustomer();
+    if (currentCust) {
+      setCustomerForm((prev) => ({
+        ...prev,
+        name: currentCust.name || prev.name,
+        phone: currentCust.phone || prev.phone,
+        email: currentCust.email || prev.email,
+        college_type: (currentCust.college_type as CollegeType) || prev.college_type,
+        college: currentCust.college || prev.college,
+        roll_number: currentCust.roll_number || prev.roll_number,
+        delivery_method:
+          currentCust.college_type === 'Other'
+            ? 'home_delivery'
+            : (currentCust.delivery_method as DeliveryMethod) || prev.delivery_method,
+        department: currentCust.department || prev.department,
+        year: currentCust.year || prev.year,
+        section: currentCust.section || prev.section,
+        building_block: currentCust.building_block || prev.building_block,
+        pickup_location: currentCust.pickup_location || prev.pickup_location,
+        address: currentCust.address || prev.address,
+        city: currentCust.city || prev.city,
+        state: currentCust.state || prev.state,
+        pincode: currentCust.pincode || prev.pincode,
+      }));
+    }
+
     const loadProduct = async () => {
       try {
         if (targetProductId) {
@@ -214,7 +253,12 @@ export const OrderPage: React.FC = () => {
         const valRes = await fetch('/api/orders/validate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(customerForm),
+          body: JSON.stringify({
+            ...customerForm,
+            quantity,
+            unit_price: unitPrice,
+            total_amount: totalAmount,
+          }),
         });
         const valData = await valRes.json();
         if (!valRes.ok || !valData.valid) {
@@ -237,6 +281,7 @@ export const OrderPage: React.FC = () => {
 
       // 4. Create or update customer record
       const customerPayload = {
+        auth_user_id: loggedInCustomer?.id || loggedInCustomer?.auth_user_id || undefined,
         name: customerForm.name,
         phone: customerForm.phone,
         email: customerForm.email,

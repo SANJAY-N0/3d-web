@@ -7,6 +7,7 @@ export type OrderStatus =
   | 'OUT_FOR_DELIVERY'
   | 'DELIVERED'
   | 'CANCELLED'
+  | 'PAYMENT_EXPIRED'
   // Legacy backward-compatibility aliases
   | 'PENDING_PAYMENT'
   | 'PENDING_PAYMENT_VERIFICATION'
@@ -91,6 +92,7 @@ export type DeliveryMethod = 'college_delivery' | 'home_delivery';
 
 export interface Customer {
   id: string;
+  auth_user_id?: string;
   name: string;
   phone: string;
   email?: string;
@@ -165,6 +167,8 @@ export interface Order {
   total_amount: number;
   customization?: CustomizationData;
   order_status: OrderStatus;
+  payment_session_created_at?: string;
+  payment_session_expires_at?: string;
   created_at: string;
   updated_at: string;
   // Joined relation fields
@@ -175,6 +179,7 @@ export interface Order {
 
 export interface CustomerUser {
   id: string;
+  auth_user_id?: string;
   name: string;
   email: string;
   phone: string;

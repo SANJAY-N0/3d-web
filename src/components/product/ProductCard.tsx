@@ -20,7 +20,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
       className="group relative bg-white dark:bg-neutral-900/70 hover:bg-slate-50 dark:hover:bg-neutral-900 border border-slate-200 dark:border-neutral-800/80 hover:border-cyan-500/50 rounded-2xl overflow-hidden transition-all duration-300 shadow-sm hover:shadow-xl hover:shadow-cyan-950/20 flex flex-col justify-between"
     >
       {/* Product Image Section */}
-      <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-neutral-950 flex items-center justify-center">
+      <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-neutral-950 flex items-center justify-center shrink-0">
         {!imageError && optimizedUrl ? (
           <img
             src={optimizedUrl}

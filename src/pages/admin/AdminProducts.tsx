@@ -103,16 +103,16 @@ export const AdminProducts: React.FC = () => {
         {/* Header Bar */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="font-display font-bold text-2xl sm:text-3xl text-white">3D Product Catalog</h1>
-            <p className="text-xs text-neutral-400 mt-1">
-              Add, edit, or adjust pricing, materials, and 3D meshes for showcase products.
+            <h1 className="font-display font-bold text-2xl sm:text-3xl text-slate-900 dark:text-white">3D Product Catalog</h1>
+            <p className="text-xs text-slate-500 dark:text-neutral-400 mt-1">
+              Manage products, pricing, materials, and showcase media.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={loadProducts}
-              className="p-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800"
+              className="p-2.5 rounded-xl bg-white hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-700 dark:text-neutral-300 border border-slate-300 dark:border-neutral-800 cursor-pointer"
               title="Refresh Catalog"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -120,7 +120,7 @@ export const AdminProducts: React.FC = () => {
 
             <button
               onClick={handleCreateNew}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all cursor-pointer"
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Add New Product</span>
@@ -130,13 +130,13 @@ export const AdminProducts: React.FC = () => {
 
         {/* Search filter */}
         <div className="relative max-w-md">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-neutral-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search products by name, category, material..."
-            className="w-full pl-10 pr-4 py-2.5 bg-neutral-900 border border-neutral-800 focus:border-cyan-500 rounded-xl text-xs text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+            placeholder="Search by name, category, or material..."
+            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-neutral-900 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 shadow-sm"
           />
         </div>
 
@@ -145,16 +145,28 @@ export const AdminProducts: React.FC = () => {
           {filteredProducts.map((prod) => (
             <div
               key={prod.id}
-              className="bg-neutral-900/70 border border-neutral-800 rounded-2xl overflow-hidden flex flex-col justify-between hover:border-neutral-700 transition-all"
+              className="bg-white dark:bg-neutral-900/70 border border-slate-200 dark:border-neutral-800 rounded-2xl overflow-hidden flex flex-col h-full hover:border-slate-300 dark:hover:border-neutral-700 transition-all shadow-sm"
             >
-              {/* Image & Quick badges */}
-              <div className="relative aspect-[16/9] w-full bg-neutral-950">
+              {/* Product Image: Fixed Consistent Aspect Ratio & Height */}
+              <div className="relative aspect-[16/9] w-full bg-slate-100 dark:bg-neutral-950 overflow-hidden shrink-0">
                 <img
                   src={cloudinaryPresets.card(prod.main_image || prod.image_url)}
                   alt={prod.name}
                   loading="lazy"
-                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    target.style.display = 'none';
+                    const fallback = target.parentElement?.querySelector('.img-fallback') as HTMLElement | null;
+                    if (fallback) fallback.style.display = 'flex';
+                  }}
+                  className="w-full h-full object-cover object-center"
                 />
+                <div
+                  className="img-fallback w-full h-full hidden flex-col items-center justify-center bg-slate-100 dark:bg-neutral-900 text-slate-400 dark:text-neutral-500 p-4 text-center"
+                >
+                  <Box className="w-8 h-8 text-cyan-500 mb-1" />
+                  <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400">3D Model Ready</span>
+                </div>
                 <div className="absolute top-2 left-2 flex flex-wrap gap-1.5">
                   <span className="px-2 py-0.5 rounded bg-black/80 backdrop-blur-md text-[10px] font-mono text-cyan-300 border border-neutral-700">
                     {prod.category}
@@ -175,7 +187,7 @@ export const AdminProducts: React.FC = () => {
                 <div className="absolute top-2 right-2">
                   <button
                     onClick={() => handleToggleAvailability(prod)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono border backdrop-blur-md transition-colors ${
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono border backdrop-blur-md transition-colors cursor-pointer ${
                       prod.is_available
                         ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/30'
                         : 'bg-rose-950/90 text-rose-300 border-rose-500/30'
@@ -187,44 +199,47 @@ export const AdminProducts: React.FC = () => {
               </div>
 
               {/* Info Body */}
-              <div className="p-4 flex-1 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-display font-semibold text-base text-white truncate">{prod.name}</h3>
-                  <span className="font-display font-bold text-sm text-cyan-400">{formatINR(prod.price)}</span>
+              <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-display font-semibold text-base text-slate-900 dark:text-white truncate">{prod.name}</h3>
+                    <span className="font-display font-bold text-sm text-cyan-600 dark:text-cyan-400 shrink-0">{formatINR(prod.price)}</span>
+                  </div>
+
+                  <p className="text-xs text-slate-600 dark:text-neutral-400 line-clamp-2 leading-relaxed">{prod.description}</p>
                 </div>
 
-                <p className="text-xs text-neutral-400 line-clamp-2 leading-relaxed">{prod.description}</p>
-
-                <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-[11px] font-mono text-neutral-400">
+                {/* Useful product specs without timing info */}
+                <div className="pt-2 border-t border-slate-100 dark:border-neutral-800/80 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-neutral-400">
                   <span>{prod.material}</span>
-                  <span>{prod.print_time}</span>
+                  <span>{prod.dimensions || prod.category}</span>
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="p-3 bg-neutral-950/80 border-t border-neutral-800 flex items-center justify-between gap-2">
+              <div className="p-3 bg-slate-50 dark:bg-neutral-950/80 border-t border-slate-100 dark:border-neutral-800 flex items-center justify-between gap-2 shrink-0">
                 <a
                   href={`/products/${prod.slug || prod.id}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="px-2.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white text-xs inline-flex items-center gap-1 border border-neutral-800 transition-colors"
+                  className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 dark:bg-neutral-900 dark:hover:bg-neutral-800 text-slate-600 hover:text-slate-900 dark:text-neutral-400 dark:hover:text-white text-xs inline-flex items-center gap-1 border border-slate-200 dark:border-neutral-800 transition-colors"
                 >
-                  <ExternalLink className="w-3 h-3 text-cyan-400" />
+                  <ExternalLink className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
                   <span>Preview</span>
                 </a>
 
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => handleEdit(prod)}
-                    className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white text-xs font-semibold flex items-center gap-1 border border-neutral-700 transition-colors"
+                    className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-200 hover:text-slate-900 dark:hover:text-white text-xs font-semibold flex items-center gap-1 border border-slate-300 dark:border-neutral-700 transition-colors cursor-pointer"
                   >
-                    <Edit2 className="w-3 h-3 text-cyan-400" />
+                    <Edit2 className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
                     <span>Edit</span>
                   </button>
 
                   <button
                     onClick={() => handleDelete(prod)}
-                    className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 hover:text-rose-200 border border-rose-900/30 transition-colors"
+                    className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-200 border border-rose-200 dark:border-rose-900/30 transition-colors cursor-pointer"
                     title="Delete Product"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -236,10 +251,10 @@ export const AdminProducts: React.FC = () => {
         </div>
 
         {filteredProducts.length === 0 && !loading && (
-          <div className="p-12 text-center bg-neutral-900/40 border border-neutral-800 rounded-3xl space-y-3">
-            <Box className="w-8 h-8 text-neutral-500 mx-auto" />
-            <h3 className="font-display font-semibold text-base text-white">No products found</h3>
-            <p className="text-xs text-neutral-400">Try adjusting your search query or create a new product.</p>
+          <div className="p-12 text-center bg-white dark:bg-neutral-900/40 border border-slate-200 dark:border-neutral-800 rounded-3xl space-y-3">
+            <Box className="w-8 h-8 text-slate-400 dark:text-neutral-500 mx-auto" />
+            <h3 className="font-display font-semibold text-base text-slate-900 dark:text-white">No products found</h3>
+            <p className="text-xs text-slate-500 dark:text-neutral-400">Try adjusting your search query or create a new product.</p>
           </div>
         )}
       </div>

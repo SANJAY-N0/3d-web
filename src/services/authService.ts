@@ -5,49 +5,6 @@ export type { CustomerUser, AdminUser, AuthUser };
 
 const ADMIN_SESSION_KEY = 'printlab_admin_session';
 const CUSTOMER_SESSION_KEY = 'printlab_customer_session';
-const REGISTERED_CUSTOMERS_KEY = 'printlab_registered_customers';
-
-// Demo initial student customer
-const DEMO_CUSTOMER: CustomerUser = {
-  id: 'cust-demo-1',
-  name: 'Sanjay Kumar',
-  email: 'sanjay150724@gmail.com',
-  phone: '9876543210',
-  college_type: 'KPR College',
-  college: 'KPR College',
-  roll_number: '22CS104',
-  delivery_method: 'college_delivery',
-  department: 'Computer Science & Engineering',
-  year: '3rd Year',
-  section: 'Section B',
-  building_block: 'Academic Block III',
-  pickup_location: 'Classroom CS-304 / Lab 2',
-  address: 'KPR College Campus, Tharangini Hostel Room 204',
-  city: 'Coimbatore',
-  state: 'Tamil Nadu',
-  pincode: '641407',
-  role: 'customer',
-  created_at: new Date().toISOString(),
-};
-
-
-function getRegisteredCustomers(): (CustomerUser & { password?: string })[] {
-  try {
-    const raw = localStorage.getItem(REGISTERED_CUSTOMERS_KEY);
-    if (!raw) {
-      const initial = [{ ...DEMO_CUSTOMER, password: 'customer123' }];
-      localStorage.setItem(REGISTERED_CUSTOMERS_KEY, JSON.stringify(initial));
-      return initial;
-    }
-    return JSON.parse(raw);
-  } catch {
-    return [{ ...DEMO_CUSTOMER, password: 'customer123' }];
-  }
-}
-
-function saveRegisteredCustomers(list: (CustomerUser & { password?: string })[]): void {
-  localStorage.setItem(REGISTERED_CUSTOMERS_KEY, JSON.stringify(list));
-}
 
 export const authService = {
   // ================= ADMIN AUTH =================
@@ -62,9 +19,9 @@ export const authService = {
         if (session?.user) {
           return {
             id: session.user.id,
-            email: session.user.email || 'admin@printlab.io',
+            email: session.user.email || '',
             role: 'admin',
-            name: session.user.user_metadata?.name || 'Store Administrator',
+            name: session.user.user_metadata?.name || 'Administrator',
           };
         }
       } catch (err) {
@@ -85,9 +42,13 @@ export const authService = {
   },
 
   async loginAdmin(email: string, password: string): Promise<AdminUser> {
+    if (!email || !password) {
+      throw new Error('Please provide both email and password.');
+    }
+
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       });
 
@@ -95,7 +56,7 @@ export const authService = {
 
       const user: AdminUser = {
         id: data.user.id,
-        email: data.user.email || email,
+        email: data.user.email || email.trim(),
         role: 'admin',
         name: data.user.user_metadata?.name || 'Administrator',
       };
@@ -103,24 +64,20 @@ export const authService = {
       return user;
     }
 
-    // Demo admin check
+    // Local fallback for standalone environments
     const normalizedEmail = email.trim().toLowerCase();
-    if (
-      normalizedEmail === 'admin@printlab.io' ||
-      normalizedEmail.includes('admin') ||
-      (normalizedEmail.includes('@') && password.length >= 6)
-    ) {
+    if (normalizedEmail.includes('@') && password.length >= 6) {
       const user: AdminUser = {
-        id: 'admin-local-1',
+        id: 'admin-' + Date.now(),
         email: normalizedEmail,
         role: 'admin',
-        name: 'PrintLab Store Admin',
+        name: 'Administrator',
       };
       localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(user));
       return user;
     }
 
-    throw new Error('Invalid admin credentials. Use admin@printlab.io and password admin123');
+    throw new Error('Invalid administrator credentials.');
   },
 
   async logout(): Promise<void> {
@@ -160,75 +117,130 @@ export const authService = {
     return Boolean(localStorage.getItem(CUSTOMER_SESSION_KEY));
   },
 
+  async checkCustomerExistsAsync(identifier: string): Promise<boolean> {
+    if (!identifier || !identifier.trim()) return false;
+    const clean = identifier.trim().toLowerCase();
+    const cleanPhone = identifier.replace(/\D/g, '');
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        let query = supabase.from('customers').select('id, email, phone');
+        if (clean.includes('@')) {
+          query = query.eq('email', clean);
+        } else if (cleanPhone.length >= 10) {
+          query = query.eq('phone', cleanPhone);
+        } else {
+          return false;
+        }
+        const { data, error } = await query.maybeSingle();
+        if (!error && data) return true;
+      } catch {
+        // Continue to local check
+      }
+    }
+
+    const localCust = this.getCurrentCustomer();
+    if (localCust) {
+      if (localCust.email?.toLowerCase() === clean) return true;
+      if (cleanPhone.length >= 10 && localCust.phone?.replace(/\D/g, '') === cleanPhone) return true;
+    }
+    return false;
+  },
+
+  checkCustomerExists(identifier: string): boolean {
+    if (!identifier || !identifier.trim()) return false;
+    const clean = identifier.trim().toLowerCase();
+    const cleanPhone = identifier.replace(/\D/g, '');
+
+    const current = this.getCurrentCustomer();
+    if (current) {
+      if (current.email?.toLowerCase() === clean) return true;
+      if (cleanPhone.length >= 10 && current.phone?.replace(/\D/g, '') === cleanPhone) return true;
+    }
+    return false;
+  },
+
   async loginCustomer(identifier: string, password?: string): Promise<CustomerUser> {
     const idClean = identifier.trim().toLowerCase();
-    const customers = getRegisteredCustomers();
+    const cleanPhone = identifier.replace(/\D/g, '');
 
-    // Find by email or phone
-    const found = customers.find(
-      (c) => c.email.toLowerCase() === idClean || c.phone.replace(/\D/g, '') === idClean.replace(/\D/g, '')
-    );
+    if (!identifier.trim()) {
+      throw new Error('Please enter your email or phone number.');
+    }
 
-    if (found) {
-      // If password provided and customer has password, check match (allow demo pass)
-      if (password && found.password && found.password !== password && password !== 'customer123' && password.length < 4) {
-        throw new Error('Incorrect customer password. Try "customer123" for demo.');
+    // 1. Supabase Auth authentication if configured
+    if (isSupabaseConfigured && supabase) {
+      let emailToAuth = idClean.includes('@') ? idClean : '';
+
+      // If phone provided, lookup associated email from customers table
+      if (!emailToAuth && cleanPhone.length >= 10) {
+        const { data: custData } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('phone', cleanPhone)
+          .maybeSingle();
+
+        if (custData && custData.email) {
+          emailToAuth = custData.email;
+        }
       }
-      const sessionUser: CustomerUser = {
-        id: found.id,
-        name: found.name,
-        email: found.email,
-        phone: found.phone,
-        college: found.college,
-        college_type: found.college_type || (found.college?.toLowerCase().includes('kpr') ? 'KPR College' : 'Other'),
-        roll_number: found.roll_number,
-        delivery_method: found.delivery_method,
-        department: found.department,
-        year: found.year,
-        section: found.section,
-        building_block: found.building_block,
-        pickup_location: found.pickup_location,
-        address: found.address,
-        city: found.city,
-        state: found.state,
-        pincode: found.pincode,
-        role: 'customer',
-        created_at: found.created_at,
-      };
-      localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(sessionUser));
-      return sessionUser;
+
+      if (emailToAuth && password) {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: emailToAuth,
+          password,
+        });
+
+        if (authError) {
+          throw new Error(authError.message || 'Invalid email or password.');
+        }
+
+        // Fetch customer profile
+        const { data: profile } = await supabase
+          .from('customers')
+          .select('*')
+          .or(`auth_user_id.eq.${authData.user.id},email.eq.${emailToAuth}`)
+          .maybeSingle();
+
+        const sessionUser: CustomerUser = {
+          id: profile?.id || authData.user.id,
+          auth_user_id: authData.user.id,
+          name: profile?.name || authData.user.user_metadata?.name || emailToAuth.split('@')[0],
+          email: emailToAuth,
+          phone: profile?.phone || '',
+          college: profile?.college,
+          college_type: profile?.college_type || 'KPR College',
+          roll_number: profile?.roll_number,
+          delivery_method: profile?.delivery_method || 'college_delivery',
+          department: profile?.department,
+          year: profile?.year,
+          section: profile?.section,
+          building_block: profile?.building_block,
+          pickup_location: profile?.pickup_location,
+          address: profile?.address || '',
+          city: profile?.city || 'Coimbatore',
+          state: profile?.state || 'Tamil Nadu',
+          pincode: profile?.pincode || '641407',
+          role: 'customer',
+          created_at: profile?.created_at || new Date().toISOString(),
+        };
+
+        localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(sessionUser));
+        return sessionUser;
+      }
     }
 
-    // If identifier looks like an email or phone, auto-create a student profile for smooth experience
-    if (idClean.includes('@') || idClean.length >= 10) {
-      const newCust: CustomerUser = {
-        id: 'cust-' + Date.now(),
-        name: idClean.includes('@') ? idClean.split('@')[0].toUpperCase() : 'Student',
-        email: idClean.includes('@') ? idClean : `${idClean}@kpr.student`,
-        phone: idClean.includes('@') ? '9876543210' : idClean,
-        college_type: 'KPR College',
-        college: 'KPR College',
-        roll_number: '22CS101',
-        delivery_method: 'college_delivery',
-        department: 'Computer Science & Engineering',
-        year: '3rd Year',
-        section: 'Section A',
-        building_block: 'Academic Block III',
-        pickup_location: 'Classroom Delivery',
-        address: 'KPR College Campus',
-        city: 'Coimbatore',
-        state: 'Tamil Nadu',
-        pincode: '641407',
-        role: 'customer',
-        created_at: new Date().toISOString(),
-      };
-      const updatedList = [...customers, { ...newCust, password: password || 'customer123' }];
-      saveRegisteredCustomers(updatedList);
-      localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(newCust));
-      return newCust;
+    // 2. Local session check
+    const current = this.getCurrentCustomer();
+    if (current) {
+      const emailMatch = current.email && current.email.toLowerCase() === idClean;
+      const phoneMatch = cleanPhone.length >= 10 && current.phone && current.phone.replace(/\D/g, '') === cleanPhone;
+      if (emailMatch || phoneMatch) {
+        return current;
+      }
     }
 
-    throw new Error('Account not found. Please enter a valid email or phone number to sign in or register.');
+    throw new Error('Account not found with this email or phone. Please register to create an account.');
   },
 
   async signupCustomer(data: {
@@ -250,46 +262,88 @@ export const authService = {
     state?: string;
     pincode?: string;
   }): Promise<CustomerUser> {
-    const customers = getRegisteredCustomers();
-    const existing = customers.find(
-      (c) => c.email.toLowerCase() === data.email.trim().toLowerCase() || c.phone === data.phone.trim()
-    );
-
+    const cleanPhone = data.phone ? data.phone.replace(/\D/g, '') : '';
+    const cleanEmail = data.email ? data.email.trim().toLowerCase() : '';
     const collegeType = data.college_type || (data.college?.toLowerCase().includes('kpr') ? 'KPR College' : 'Other');
     const collegeName = collegeType === 'KPR College' ? 'KPR College' : (data.college?.trim() || 'Other College');
 
-    if (existing) {
-      // Update existing record
-      const updatedUser: CustomerUser = {
-        ...existing,
-        name: data.name.trim(),
-        email: data.email.trim(),
-        phone: data.phone.trim(),
-        college_type: collegeType,
-        college: collegeName,
-        roll_number: data.roll_number?.trim() || existing.roll_number,
-        delivery_method: data.delivery_method || existing.delivery_method,
-        department: data.department?.trim() || existing.department,
-        year: data.year?.trim() || existing.year,
-        section: data.section?.trim() || existing.section,
-        building_block: data.building_block?.trim() || existing.building_block,
-        pickup_location: data.pickup_location?.trim() || existing.pickup_location,
-        address: data.address?.trim() || existing.address,
-        city: data.city?.trim() || existing.city,
-        state: data.state?.trim() || existing.state,
-        pincode: data.pincode?.trim() || existing.pincode,
-      };
-      const filtered = customers.filter((c) => c.id !== existing.id);
-      saveRegisteredCustomers([...filtered, { ...updatedUser, password: data.password || existing.password || 'customer123' }]);
-      localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(updatedUser));
-      return updatedUser;
+    let authUserId: string | undefined = undefined;
+
+    // 1. Register with Supabase Auth if configured and password provided
+    if (isSupabaseConfigured && supabase && data.password) {
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password: data.password,
+          options: {
+            data: {
+              name: data.name.trim(),
+              phone: cleanPhone,
+            },
+          },
+        });
+
+        if (authError) {
+          // If user already registered, advise login
+          if (authError.message.includes('already registered')) {
+            throw new Error('An account with this email already exists. Please sign in.');
+          }
+          throw new Error(authError.message);
+        }
+
+        if (authData.user) {
+          authUserId = authData.user.id;
+        }
+      } catch (err: any) {
+        throw new Error(err.message || 'Supabase authentication failed.');
+      }
     }
 
+    // 2. Persist customer profile to Supabase `customers` table
+    let customerId = 'cust-' + Date.now();
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const customerRow = {
+          auth_user_id: authUserId,
+          name: data.name.trim(),
+          phone: cleanPhone,
+          email: cleanEmail,
+          college: collegeName,
+          college_type: collegeType,
+          roll_number: data.roll_number?.trim() || '',
+          delivery_method: data.delivery_method || (collegeType === 'KPR College' ? 'college_delivery' : 'home_delivery'),
+          department: data.department?.trim() || '',
+          year: data.year?.trim() || '',
+          section: data.section?.trim() || '',
+          building_block: data.building_block?.trim() || '',
+          pickup_location: data.pickup_location?.trim() || '',
+          address: data.address?.trim() || (collegeType === 'KPR College' ? 'KPR College Campus' : 'Delivery Address'),
+          city: data.city?.trim() || 'Coimbatore',
+          state: data.state?.trim() || 'Tamil Nadu',
+          pincode: data.pincode?.trim() || '641407',
+        };
+
+        const { data: inserted, error: insertError } = await supabase
+          .from('customers')
+          .insert([customerRow])
+          .select()
+          .single();
+
+        if (!insertError && inserted) {
+          customerId = inserted.id;
+        }
+      } catch (err) {
+        console.warn('Customer profile insert error:', err);
+      }
+    }
+
+    // 3. Create session user object (NEVER storing raw password)
     const newCustomer: CustomerUser = {
-      id: 'cust-' + Date.now(),
+      id: customerId,
+      auth_user_id: authUserId,
       name: data.name.trim(),
-      email: data.email.trim(),
-      phone: data.phone.trim(),
+      email: cleanEmail,
+      phone: cleanPhone,
       college_type: collegeType,
       college: collegeName,
       roll_number: data.roll_number?.trim() || '',
@@ -307,11 +361,26 @@ export const authService = {
       created_at: new Date().toISOString(),
     };
 
-    saveRegisteredCustomers([...customers, { ...newCustomer, password: data.password || 'customer123' }]);
     localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(newCustomer));
     return newCustomer;
   },
 
+  async resetCustomerPassword(email: string): Promise<void> {
+    if (!email || !email.includes('@')) {
+      throw new Error('Please enter a valid email address.');
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      if (error) throw new Error(error.message);
+      return;
+    }
+
+    // In offline mode
+    throw new Error('Password reset requires an active Supabase connection.');
+  },
 
   async updateCustomerProfile(updates: Partial<CustomerUser>): Promise<CustomerUser> {
     const current = this.getCurrentCustomer();
@@ -324,23 +393,31 @@ export const authService = {
 
     localStorage.setItem(CUSTOMER_SESSION_KEY, JSON.stringify(updated));
 
-    // Also update in registered list
-    const customers = getRegisteredCustomers();
-    const index = customers.findIndex((c) => c.id === current.id);
-    if (index !== -1) {
-      customers[index] = { ...customers[index], ...updated };
-      saveRegisteredCustomers(customers);
+    if (isSupabaseConfigured && supabase && updated.id) {
+      try {
+        await supabase
+          .from('customers')
+          .update({
+            ...updates,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', updated.id);
+      } catch (err) {
+        console.warn('Customer profile update in Supabase failed:', err);
+      }
     }
 
     return updated;
   },
 
   async logoutCustomer(): Promise<void> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn('Supabase customer signout failed:', err);
+      }
+    }
     localStorage.removeItem(CUSTOMER_SESSION_KEY);
-  },
-
-  getDemoCustomer(): CustomerUser {
-    return DEMO_CUSTOMER;
   }
 };
-

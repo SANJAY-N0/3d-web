@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { buildUPIUri, formatINR, DEFAULT_UPI_ID } from '../../lib/upiUtils';
+import { buildUPIUri, formatINR, getMerchantUPIConfig } from '../../lib/upiUtils';
 import { useToast } from '../common/Toast';
 import { Copy, Check, QrCode, Smartphone, ExternalLink } from 'lucide-react';
 
@@ -15,22 +15,26 @@ export const UPIQRCodeDisplay: React.FC<UPIQRCodeDisplayProps> = ({
   amount,
   orderNumber,
   productName,
-  upiId = DEFAULT_UPI_ID,
+  upiId,
 }) => {
   const { showToast } = useToast();
   const [copied, setCopied] = useState(false);
 
+  const merchantConfig = getMerchantUPIConfig();
+  const activeUpiId = upiId || merchantConfig.upiId;
+
   const upiUri = buildUPIUri({
-    upiId,
+    upiId: activeUpiId,
+    businessName: merchantConfig.businessName,
     amount,
     orderNumber,
     note: `PrintLab 3D Order ${orderNumber}`,
   });
 
   const handleCopyUPI = () => {
-    navigator.clipboard.writeText(upiId);
+    navigator.clipboard.writeText(activeUpiId);
     setCopied(true);
-    showToast(`Copied UPI ID: ${upiId}`, 'success');
+    showToast(`Copied UPI ID: ${activeUpiId}`, 'success');
     setTimeout(() => setCopied(false), 2500);
   };
 
@@ -78,7 +82,7 @@ export const UPIQRCodeDisplay: React.FC<UPIQRCodeDisplayProps> = ({
       <div className="bg-slate-50 dark:bg-neutral-950/80 border border-slate-200 dark:border-neutral-800 rounded-xl p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex flex-col text-center sm:text-left">
           <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-neutral-400 font-semibold">Official Merchant UPI ID</span>
-          <span className="font-mono text-sm font-semibold text-slate-900 dark:text-white select-all">{upiId}</span>
+          <span className="font-mono text-sm font-semibold text-slate-900 dark:text-white select-all">{activeUpiId}</span>
         </div>
 
         <button
