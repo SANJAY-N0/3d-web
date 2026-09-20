@@ -198,10 +198,27 @@ export const OrderPage: React.FC = () => {
     loadProduct();
   }, [targetProductId, initialColor]);
 
-  if (loading || !product) {
+  if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-20 flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!product) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-20 text-center space-y-4">
+        <h2 className="font-display font-bold text-2xl text-slate-900 dark:text-white">No Products Available</h2>
+        <p className="text-sm text-slate-600 dark:text-neutral-400">
+          There are currently no products available to order. Please check back later.
+        </p>
+        <Link
+          to="/products"
+          className="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-100 dark:bg-neutral-900 border border-slate-300 dark:border-neutral-800 rounded-xl text-cyan-700 dark:text-cyan-300 text-xs font-mono"
+        >
+          Browse Products
+        </Link>
       </div>
     );
   }

@@ -253,8 +253,14 @@ export const AdminProducts: React.FC = () => {
         {filteredProducts.length === 0 && !loading && (
           <div className="p-12 text-center bg-white dark:bg-neutral-900/40 border border-slate-200 dark:border-neutral-800 rounded-3xl space-y-3">
             <Box className="w-8 h-8 text-slate-400 dark:text-neutral-500 mx-auto" />
-            <h3 className="font-display font-semibold text-base text-slate-900 dark:text-white">No products found</h3>
-            <p className="text-xs text-slate-500 dark:text-neutral-400">Try adjusting your search query or create a new product.</p>
+            <h3 className="font-display font-semibold text-base text-slate-900 dark:text-white">
+              {products.length === 0 ? 'No products in catalog' : 'No products found'}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-neutral-400">
+              {products.length === 0
+                ? 'Your Supabase database currently has 0 products. Click "Add New Product" to create your first item.'
+                : 'Try adjusting your search query or clear the filter.'}
+            </p>
           </div>
         )}
       </div>

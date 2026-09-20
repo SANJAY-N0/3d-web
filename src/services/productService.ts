@@ -1,7 +1,15 @@
 import { Product } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
-const PRODUCTS_STORAGE_KEY = 'printlab_products_data_v1';
+// Immediately purge any legacy product cache from localStorage
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.removeItem('printlab_products_data_v1');
+    window.localStorage.removeItem('printlab_products_data_v2');
+  }
+} catch {
+  // ignore in non-browser environments
+}
 
 function normalizeProduct(p: any): Product {
   const mainImg = p.main_image || p.image_url || '';
@@ -30,53 +38,46 @@ function isFakeProduct(p: any): boolean {
   return false;
 }
 
-function getLocalProducts(): Product[] {
-  try {
-    const raw = localStorage.getItem(PRODUCTS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: any[] = JSON.parse(raw);
-    const cleaned = parsed.filter((p) => !isFakeProduct(p)).map(normalizeProduct);
-    if (cleaned.length !== parsed.length) {
-      saveLocalProducts(cleaned);
-    }
-    return cleaned;
-  } catch {
-    return [];
-  }
-}
-
-function saveLocalProducts(products: Product[]): void {
-  const cleaned = products.filter((p) => !isFakeProduct(p));
-  localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(cleaned));
-}
-
 export const productService = {
   /**
    * Fetch all products from Supabase (pure real data, no fake mock fallback)
    */
   async getAll(): Promise<Product[]> {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (error) {
-          console.error('Supabase products query error:', error);
-          throw error;
-        }
-
-        // Return real data from Supabase (empty array if none exist)
-        const products = (data || []).map(normalizeProduct).filter((p) => !isFakeProduct(p));
-        saveLocalProducts(products);
-        return products;
-      } catch (err) {
-        console.warn('Supabase products fetch failed, using local cache:', err);
-        return getLocalProducts();
+    // Purge any stale products cache from localStorage
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem('printlab_products_data_v1');
+        window.localStorage.removeItem('printlab_products_data_v2');
       }
+    } catch {
+      // ignore
     }
-    return getLocalProducts();
+
+    if (!isSupabaseConfigured || !supabase) {
+      console.warn('Supabase is not configured. Returning empty product list (0 products).');
+      return [];
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Supabase products query error:', error);
+        return [];
+      }
+
+      if (!data || data.length === 0) {
+        return [];
+      }
+
+      return data.map(normalizeProduct).filter((p) => !isFakeProduct(p));
+    } catch (err) {
+      console.error('Supabase products fetch failed:', err);
+      return [];
+    }
   },
 
   /**
@@ -91,117 +92,114 @@ export const productService = {
    * Fetch single product by slug or id
    */
   async getBySlugOrId(idOrSlug: string): Promise<Product | null> {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .or(`id.eq.${idOrSlug},slug.eq.${idOrSlug}`)
-          .maybeSingle();
-
-        if (error) throw error;
-        if (data) return normalizeProduct(data);
-        return null;
-      } catch (err) {
-        console.warn('Supabase single product fetch failed:', err);
-      }
+    if (!isSupabaseConfigured || !supabase) {
+      return null;
     }
-    const all = getLocalProducts();
-    return all.find((p) => p.id === idOrSlug || p.slug === idOrSlug) || null;
+
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .or(`id.eq.${idOrSlug},slug.eq.${idOrSlug}`)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Supabase single product fetch error:', error);
+        return null;
+      }
+      if (data && !isFakeProduct(data)) {
+        return normalizeProduct(data);
+      }
+      return null;
+    } catch (err) {
+      console.error('Supabase single product fetch failed:', err);
+      return null;
+    }
   },
 
   /**
    * Create new product in Supabase
    */
   async create(productData: Omit<Product, 'id' | 'created_at' | 'updated_at'>): Promise<Product> {
-    const newProduct: Product = {
-      ...productData,
-      id: 'prod-' + Date.now(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase.from('products').insert([productData]).select().single();
-        if (error) throw error;
-        if (data) return normalizeProduct(data);
-      } catch (err) {
-        console.warn('Supabase product insert failed, saving locally:', err);
-      }
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase is not configured. Cannot create product.');
     }
 
-    const current = getLocalProducts();
-    const updated = [newProduct, ...current];
-    saveLocalProducts(updated);
-    return newProduct;
+    const { data, error } = await supabase
+      .from('products')
+      .insert([productData])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Supabase product insert error:', error);
+      throw error;
+    }
+
+    return normalizeProduct(data);
   },
 
   /**
    * Update existing product in Supabase
    */
   async update(id: string, updates: Partial<Product>): Promise<Product> {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('products')
-          .update({ ...updates, updated_at: new Date().toISOString() })
-          .eq('id', id)
-          .select()
-          .single();
-
-        if (error) throw error;
-        if (data) return normalizeProduct(data);
-      } catch (err) {
-        console.warn('Supabase product update failed:', err);
-      }
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase is not configured. Cannot update product.');
     }
 
-    const current = getLocalProducts();
-    const index = current.findIndex((p) => p.id === id);
-    if (index === -1) throw new Error('Product not found');
+    const { data, error } = await supabase
+      .from('products')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
 
-    const updatedProduct = {
-      ...current[index],
-      ...updates,
-      updated_at: new Date().toISOString(),
-    };
-    current[index] = updatedProduct;
-    saveLocalProducts(current);
-    return updatedProduct;
+    if (error) {
+      console.error('Supabase product update error:', error);
+      throw error;
+    }
+
+    return normalizeProduct(data);
   },
 
   /**
    * Delete product in Supabase
    */
   async delete(id: string): Promise<void> {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase.from('products').delete().eq('id', id);
-        if (error) throw error;
-      } catch (err) {
-        console.warn('Supabase product delete failed:', err);
-      }
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase is not configured. Cannot delete product.');
     }
 
-    const current = getLocalProducts();
-    const updated = current.filter((p) => p.id !== id);
-    saveLocalProducts(updated);
+    const { error } = await supabase.from('products').delete().eq('id', id);
+    if (error) {
+      console.error('Supabase product delete error:', error);
+      throw error;
+    }
   },
 
   /**
    * Clear all locally cached products
    */
   async clearLocalProductsCache(): Promise<Product[]> {
-    localStorage.removeItem(PRODUCTS_STORAGE_KEY);
+    try {
+      localStorage.removeItem('printlab_products_data_v1');
+      localStorage.removeItem('printlab_products_data_v2');
+    } catch {
+      // ignore
+    }
     return this.getAll();
   }
 };
 
 export function clearLocalCaches(): void {
-  localStorage.removeItem('printlab_products_data_v1');
-  localStorage.removeItem('printlab_orders_data_v1');
-  localStorage.removeItem('printlab_customers_data_v1');
+  try {
+    localStorage.removeItem('printlab_products_data_v1');
+    localStorage.removeItem('printlab_products_data_v2');
+    localStorage.removeItem('printlab_orders_data_v1');
+    localStorage.removeItem('printlab_customers_data_v1');
+  } catch {
+    // ignore
+  }
 }
 
 // Backward-compatibility alias
