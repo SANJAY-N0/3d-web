@@ -139,7 +139,7 @@ export const AdminOrders: React.FC = () => {
       'Payment Status',
       'Order Status',
       'UPI Ref / UTR',
-      'OCR Confidence',
+      'Verification Confidence',
       'UPI Match',
       'Amount Match',
       'Admin Notes',

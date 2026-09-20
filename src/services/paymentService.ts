@@ -48,7 +48,7 @@ export const paymentService = {
   },
 
   /**
-   * Call server-side AI OCR endpoint to analyze uploaded UPI screenshot
+   * Call server-side verification endpoint to analyze uploaded UPI screenshot
    */
   async analyzeScreenshot(params: {
     imageBase64: string;
@@ -72,7 +72,7 @@ export const paymentService = {
       const data = await res.json();
       return data;
     } catch (err: any) {
-      console.warn('Backend OCR analysis unavailable:', err);
+      console.warn('Backend verification scan unavailable:', err);
       return {
         success: false,
         error: 'Automated verification was unable to extract receipt details. Please enter your 12-digit UPI reference (UTR) manually.',
