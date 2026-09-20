@@ -83,9 +83,29 @@ export const orderService = {
   },
 
   /**
-   * Fetch order by ID or order number
+   * Fetch order by ID or order number (via server API with fallback to Supabase and local cache)
    */
   async getById(idOrOrderNumber: string): Promise<Order | null> {
+    if (!idOrOrderNumber || !idOrOrderNumber.trim()) return null;
+    const cleanId = idOrOrderNumber.trim();
+
+    // 1. Try server API endpoint first
+    try {
+      const res = await fetch(`/api/orders/${encodeURIComponent(cleanId)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data?.order && !isFakeOrder(json.data.order)) {
+          return normalizeOrder(json.data.order);
+        }
+      } else if (res.status === 404) {
+        // Specifically not found on server
+        return null;
+      }
+    } catch (apiErr) {
+      console.warn('Backend /api/orders/:orderId fetch failed, trying direct Supabase query:', apiErr);
+    }
+
+    // 2. Direct Supabase query fallback
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
@@ -96,20 +116,20 @@ export const orderService = {
             customer:customers(*),
             payment:payments(*)
           `)
-          .or(`id.eq.${idOrOrderNumber},order_number.eq.${idOrOrderNumber}`)
+          .or(`id.eq.${cleanId},order_number.eq.${cleanId}`)
           .maybeSingle();
 
-        if (error) throw error;
-        if (data && !isFakeOrder(data)) return normalizeOrder(data);
-        return null;
+        if (!error && data && !isFakeOrder(data)) {
+          return normalizeOrder(data);
+        }
       } catch (err) {
         console.warn('Supabase single order fetch failed:', err);
-        return null;
       }
     }
 
+    // 3. Local cache fallback
     const all = getLocalOrders();
-    return all.find((o) => (o.id === idOrOrderNumber || o.order_number.toUpperCase() === idOrOrderNumber.toUpperCase()) && !isFakeOrder(o)) || null;
+    return all.find((o) => (o.id === cleanId || o.order_number.toUpperCase() === cleanId.toUpperCase()) && !isFakeOrder(o)) || null;
   },
 
   /**

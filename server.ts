@@ -298,6 +298,103 @@ async function startServer() {
   });
 
   /**
+   * Dedicated endpoint to fetch order & payment details for checkout / payment page
+   */
+  app.get("/api/orders/:orderId", async (req, res) => {
+    try {
+      const { orderId } = req.params;
+      if (!orderId || orderId.trim() === "") {
+        return res.status(400).json({ success: false, error: "Order ID is required." });
+      }
+
+      const cleanOrderId = orderId.trim();
+      console.log("Payment API fetching order:", cleanOrderId);
+
+      if (!supabaseServer) {
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      // Fetch order with product, customer, and payment relations
+      const { data: orderData, error: orderError } = await supabaseServer
+        .from("orders")
+        .select(`
+          *,
+          product:products(*),
+          customer:customers(*),
+          payment:payments(*)
+        `)
+        .or(`id.eq.${cleanOrderId},order_number.eq.${cleanOrderId}`)
+        .maybeSingle();
+
+      if (orderError) {
+        console.error("Payment page backend error:", orderError);
+        return res.status(500).json({ success: false, error: "Failed to retrieve order." });
+      }
+
+      if (!orderData) {
+        return res.status(404).json({
+          success: false,
+          error: "Payment session could not be found. Please create a new order.",
+        });
+      }
+
+      // Check if session has expired
+      let isExpired = false;
+      if (orderData.payment_session_expires_at) {
+        const expiresAtTime = new Date(orderData.payment_session_expires_at).getTime();
+        if (Date.now() >= expiresAtTime && (orderData.order_status === "PENDING_PAYMENT" || orderData.order_status === "ORDER_PLACED")) {
+          isExpired = true;
+          orderData.order_status = "PAYMENT_EXPIRED";
+          await supabaseServer
+            .from("orders")
+            .update({ order_status: "PAYMENT_EXPIRED", updated_at: new Date().toISOString() })
+            .eq("id", orderData.id);
+        }
+      }
+
+      const paymentData = Array.isArray(orderData.payment) ? orderData.payment[0] || null : orderData.payment;
+      const normalizedOrder = {
+        ...orderData,
+        payment: paymentData,
+      };
+
+      // Load merchant settings for UPI payment
+      const { data: settingsRows } = await supabaseServer
+        .from("settings")
+        .select("key, value")
+        .in("key", ["merchant_upi_id", "merchant_name", "support_phone", "support_whatsapp"]);
+
+      const settingsMap: Record<string, string> = {};
+      if (settingsRows) {
+        for (const row of settingsRows) {
+          settingsMap[row.key] = row.value;
+        }
+      }
+
+      const responsePayload = {
+        success: true,
+        expired: isExpired,
+        data: {
+          order: normalizedOrder,
+          payment: paymentData,
+          settings: {
+            merchant_upi_id: settingsMap.merchant_upi_id || process.env.VITE_MERCHANT_UPI_ID || "printlab3d@okhdfcbank",
+            merchant_name: settingsMap.merchant_name || process.env.VITE_MERCHANT_NAME || "PRINTLAB 3D",
+            support_phone: settingsMap.support_phone,
+            support_whatsapp: settingsMap.support_whatsapp,
+          },
+        },
+      };
+
+      console.log("Payment API response for order:", cleanOrderId, "status:", normalizedOrder.order_status);
+      return res.json(responsePayload);
+    } catch (err: any) {
+      console.error("API GET /api/orders/:orderId error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Internal server error." });
+    }
+  });
+
+  /**
    * Backend Payment Session Verification Endpoint
    * Enforces 10-minute window before accepting any payment actions
    * Validates directly against database if orderId is provided

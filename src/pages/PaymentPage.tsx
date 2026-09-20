@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useLocation, useNavigate, Link } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, Link } from 'react-router-dom';
 import { StepProgress } from '../components/common/StepProgress';
 import { UPIQRCodeDisplay } from '../components/order/UPIQRCodeDisplay';
 import { OrderSummaryCard } from '../components/order/OrderSummaryCard';
@@ -29,6 +29,7 @@ import { useToast } from '../components/common/Toast';
 export const PaymentPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { orderId: paramOrderId } = useParams<{ orderId?: string }>();
   const { showToast } = useToast();
 
   const stateData = location.state as
@@ -43,8 +44,21 @@ export const PaymentPage: React.FC = () => {
       }
     | undefined;
 
+  const searchParams = new URLSearchParams(location.search);
+  const queryOrderId = searchParams.get('orderId') || searchParams.get('order');
+
+  // Multi-tier order ID resolution: param -> query -> router state -> storage
+  const resolvedOrderId =
+    paramOrderId ||
+    queryOrderId ||
+    stateData?.orderId ||
+    (typeof window !== 'undefined'
+      ? sessionStorage.getItem('printlab_last_order_id') || localStorage.getItem('printlab_last_order_id')
+      : null);
+
   const [order, setOrder] = useState<Order | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // 10-Minute Payment Session Countdown State
   const [timeLeft, setTimeLeft] = useState<number>(600);
@@ -65,41 +79,107 @@ export const PaymentPage: React.FC = () => {
   const fileUploadInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  const stateOrderId = stateData?.orderId;
-
   useEffect(() => {
     window.scrollTo(0, 0);
 
+    let isMounted = true;
+    console.log('Payment order ID:', resolvedOrderId);
+
+    // 10-second timeout to prevent infinite loading state
+    const timeoutId = setTimeout(() => {
+      if (isMounted && loading) {
+        setLoading(false);
+        setFetchError('Unable to load payment details. Please check your connection or try again.');
+      }
+    }, 10000);
+
     const loadOrderData = async () => {
-      let currentOrder: Order | null = null;
-      if (stateOrderId) {
-        currentOrder = await orderService.ensurePaymentSession(stateOrderId);
+      if (!resolvedOrderId) {
+        if (isMounted) {
+          setLoading(false);
+          setFetchError('Payment session could not be found. Please create a new order.');
+        }
+        return;
       }
 
-      if (!currentOrder) {
-        // If no state passed (e.g. direct refresh), fetch latest order
-        const allOrders = await orderService.getAll();
-        if (allOrders.length > 0) {
-          currentOrder = await orderService.ensurePaymentSession(allOrders[0].id);
+      try {
+        // Fast hydration: if stateData contains product details, initialize immediate preview
+        if (stateData && stateData.orderId === resolvedOrderId && stateData.product) {
+          const previewOrder: Order = {
+            id: stateData.orderId,
+            order_number: stateData.orderNumber || 'PENDING',
+            customer_id: stateData.customer?.id || '',
+            product_id: stateData.product.id,
+            quantity: stateData.product.quantity || 1,
+            unit_price: stateData.product.price,
+            total_amount: stateData.totalAmount || stateData.product.price,
+            customization: stateData.customization,
+            order_status: 'PENDING_PAYMENT',
+            payment_session_created_at: new Date().toISOString(),
+            payment_session_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            product: stateData.product,
+            customer: stateData.customer,
+          };
+          if (isMounted) {
+            setOrder(previewOrder);
+          }
         }
-      }
 
-      if (currentOrder) {
-        setOrder(currentOrder);
-        // Compute initial remaining seconds
-        if (currentOrder.payment_session_expires_at) {
-          const remaining = Math.max(
-            0,
-            Math.floor((new Date(currentOrder.payment_session_expires_at).getTime() - Date.now()) / 1000)
-          );
-          setTimeLeft(remaining);
+        // Fetch verified order data and ensure active 10-minute session from server
+        const currentOrder = await orderService.ensurePaymentSession(resolvedOrderId);
+
+        if (!isMounted) return;
+
+        if (currentOrder) {
+          setOrder(currentOrder);
+          setFetchError(null);
+
+          // Store active order ID for refresh resilience
+          if (typeof window !== 'undefined') {
+            try {
+              sessionStorage.setItem('printlab_last_order_id', currentOrder.id);
+              localStorage.setItem('printlab_last_order_id', currentOrder.id);
+            } catch {
+              // ignore
+            }
+          }
+
+          // Compute remaining seconds from database payment_session_expires_at
+          if (currentOrder.payment_session_expires_at) {
+            const remaining = Math.max(
+              0,
+              Math.floor((new Date(currentOrder.payment_session_expires_at).getTime() - Date.now()) / 1000)
+            );
+            setTimeLeft(remaining);
+          }
+        } else {
+          // If no order returned and no fast preview available
+          if (!order && !stateData?.product) {
+            setFetchError('Payment session could not be found. Please create a new order.');
+          }
+        }
+      } catch (err: any) {
+        console.error('Payment page error:', err);
+        if (isMounted) {
+          setFetchError(err?.message || 'Unable to load payment details. Please try again.');
+        }
+      } finally {
+        if (isMounted) {
+          clearTimeout(timeoutId);
+          setLoading(false);
         }
       }
-      setLoading(false);
     };
 
     loadOrderData();
-  }, [stateOrderId]);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [resolvedOrderId]);
 
   // Active 1-second countdown ticker
   useEffect(() => {
@@ -123,16 +203,57 @@ export const PaymentPage: React.FC = () => {
     return () => clearInterval(interval);
   }, [order?.payment_session_expires_at, order?.id, order?.order_status]);
 
-  if (loading || !order) {
+  // STATE 1: LOADING STATE
+  if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-20 flex items-center justify-center">
+      <div className="max-w-4xl mx-auto px-4 py-20 flex items-center justify-center min-h-[50vh]">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-9 h-9 border-3 border-cyan-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-xs font-mono text-slate-500 dark:text-neutral-400">Loading payment details...</span>
         </div>
       </div>
     );
   }
+
+  // STATE 2: ERROR STATE (Order not found, invalid session, or timeout)
+  if (fetchError || !order) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-6">
+        <div className="w-16 h-16 rounded-3xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/40 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto shadow-sm">
+          <AlertCircle className="w-8 h-8" />
+        </div>
+
+        <div className="space-y-2">
+          <h2 className="font-display font-bold text-2xl text-slate-900 dark:text-white">
+            Payment Session Error
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-neutral-400 max-w-md mx-auto leading-relaxed">
+            {fetchError || 'Payment session could not be found. Please create a new order.'}
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+          <Link
+            to="/products"
+            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/20 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create New Order</span>
+          </Link>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-200 border border-slate-300 dark:border-neutral-700 text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Try Again</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // STATE 3: ACTIVE OR EXPIRED PAYMENT SESSION
 
   // Check if session has expired
   const isSessionExpired =

@@ -339,6 +339,16 @@ export const OrderPage: React.FC = () => {
 
       showToast('Order registered! Redirecting to UPI payment...', 'success');
 
+      // Store the active order ID in sessionStorage and localStorage for safe browser reload
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem('printlab_last_order_id', newOrder.id);
+          localStorage.setItem('printlab_last_order_id', newOrder.id);
+        } catch {
+          // ignore
+        }
+      }
+
       // 7. Navigate directly to UPI Payment page
       navigate(`/payment/${newOrder.id}`, {
         state: {

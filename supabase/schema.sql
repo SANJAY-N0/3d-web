@@ -254,13 +254,16 @@ DROP POLICY IF EXISTS "Public can register customer profile" ON customers;
 CREATE POLICY "Public can register customer profile" 
   ON customers FOR INSERT WITH CHECK (true);
 
--- Customers can view only their own profile; admins can view all
+-- Customers can view only their own profile, admins can view all, or during active payment session
 DROP POLICY IF EXISTS "Customers view own profile or admins view all" ON customers;
 CREATE POLICY "Customers view own profile or admins view all" 
   ON customers FOR SELECT 
   USING (
     (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id)
     OR is_admin()
+    OR id IN (
+      SELECT customer_id FROM orders WHERE order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION') AND payment_session_expires_at > now()
+    )
   );
 
 -- Customers can update only their own profile; admins can update all
@@ -278,15 +281,16 @@ DROP POLICY IF EXISTS "Public can insert orders" ON orders;
 CREATE POLICY "Public can insert orders" 
   ON orders FOR INSERT WITH CHECK (true);
 
--- Customers can view only their own orders; admins can view all
+-- Customers can view only their own orders, admins can view all, or during active payment session
 DROP POLICY IF EXISTS "Customers view own orders or admins view all" ON orders;
 CREATE POLICY "Customers view own orders or admins view all" 
   ON orders FOR SELECT 
   USING (
-    customer_id IN (
+    (auth.uid() IS NOT NULL AND customer_id IN (
       SELECT id FROM customers WHERE auth_user_id = auth.uid()
-    )
+    ))
     OR is_admin()
+    OR (order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION') AND payment_session_expires_at > now())
   );
 
 -- Only admins can update orders arbitrarily; customers can update pending status during checkout
@@ -300,8 +304,11 @@ DROP POLICY IF EXISTS "Customers can update own pending order status" ON orders;
 CREATE POLICY "Customers can update own pending order status" 
   ON orders FOR UPDATE 
   USING (
-    customer_id IN (
-      SELECT id FROM customers WHERE auth_user_id = auth.uid()
+    (
+      (auth.uid() IS NOT NULL AND customer_id IN (
+        SELECT id FROM customers WHERE auth_user_id = auth.uid()
+      ))
+      OR (order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION') AND payment_session_expires_at > now())
     )
     AND order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION')
   );
@@ -312,16 +319,19 @@ DROP POLICY IF EXISTS "Public can submit payments" ON payments;
 CREATE POLICY "Public can submit payments" 
   ON payments FOR INSERT WITH CHECK (true);
 
--- Only order owners and admins can view payment records
+-- Only order owners, admins, or active payment session can view payment records
 DROP POLICY IF EXISTS "View payment records" ON payments;
 CREATE POLICY "View payment records" 
   ON payments FOR SELECT 
   USING (
     is_admin()
-    OR order_id IN (
+    OR (auth.uid() IS NOT NULL AND order_id IN (
       SELECT id FROM orders WHERE customer_id IN (
         SELECT id FROM customers WHERE auth_user_id = auth.uid()
       )
+    ))
+    OR order_id IN (
+      SELECT id FROM orders WHERE order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION') AND payment_session_expires_at > now()
     )
   );
 
