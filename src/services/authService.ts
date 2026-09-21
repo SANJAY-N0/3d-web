@@ -390,10 +390,17 @@ export const authService = {
         });
 
         if (authError) {
-          if (authError.message.toLowerCase().includes('already registered')) {
+          const errMsg = authError.message || '';
+          if (errMsg.toLowerCase().includes('already registered')) {
             throw new Error('An account with this email already exists. Please sign in with your password.');
           }
-          throw new Error(authError.message);
+          if (
+            errMsg.toLowerCase().includes('rate limit') ||
+            (authError as any).code === 'over_email_send_rate_limit'
+          ) {
+            throw new Error('Registration email temporarily unavailable due to project email rate limit. Please try again later or contact support.');
+          }
+          throw new Error(errMsg);
         }
 
         if (authData.user) {
@@ -495,7 +502,14 @@ export const authService = {
       });
 
       if (error) {
-        throw new Error(error.message || 'Failed to resend confirmation email.');
+        const errMsg = error.message || '';
+        if (
+          errMsg.toLowerCase().includes('rate limit') ||
+          (error as any).code === 'over_email_send_rate_limit'
+        ) {
+          throw new Error('Email resend limit reached. Please wait a while before requesting another email.');
+        }
+        throw new Error(errMsg || 'Failed to resend confirmation email.');
       }
       return;
     }
@@ -512,7 +526,16 @@ export const authService = {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
         redirectTo: `${window.location.origin}/login?type=recovery`,
       });
-      if (error) throw new Error(error.message);
+      if (error) {
+        const errMsg = error.message || '';
+        if (
+          errMsg.toLowerCase().includes('rate limit') ||
+          (error as any).code === 'over_email_send_rate_limit'
+        ) {
+          throw new Error('Password reset email limit reached. Please wait a while before trying again.');
+        }
+        throw new Error(errMsg);
+      }
       return;
     }
 
