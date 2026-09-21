@@ -93,6 +93,47 @@ export interface CloudinaryConfigStatus {
 export type CollegeType = 'KPR College' | 'Other';
 export type DeliveryMethod = 'college_delivery' | 'home_delivery';
 
+export interface DepartmentYear {
+  id: string;
+  department_id: string;
+  year: string;
+  status: 'active' | 'inactive';
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Department {
+  id: string;
+  college_name: string;
+  name: string;
+  code: string;
+  status: 'active' | 'inactive';
+  created_at?: string;
+  updated_at?: string;
+  years?: string[];
+  department_years?: DepartmentYear[];
+}
+
+export interface AcademicImportDepartment {
+  name: string;
+  code: string;
+  years: string[];
+}
+
+export interface AcademicImportData {
+  college_code: string;
+  departments: AcademicImportDepartment[];
+}
+
+export interface AcademicImportResult {
+  success: boolean;
+  departmentsCreated: number;
+  departmentsSkipped: number;
+  yearsCreated: number;
+  yearsSkipped: number;
+  message?: string;
+}
+
 export interface Customer {
   id: string;
   auth_user_id?: string;
@@ -105,6 +146,7 @@ export interface Customer {
   delivery_method?: DeliveryMethod;
   // KPR College delivery fields
   department?: string;
+  department_id?: string;
   year?: string;
   section?: string;
   building_block?: string;
@@ -191,6 +233,7 @@ export interface CustomerUser {
   roll_number?: string;
   delivery_method?: DeliveryMethod;
   department?: string;
+  department_id?: string;
   year?: string;
   section?: string;
   building_block?: string;

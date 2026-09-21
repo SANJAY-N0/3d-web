@@ -44,7 +44,34 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 -- ==========================================================
--- 2. CUSTOMERS TABLE
+-- 2. DEPARTMENTS TABLE
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS departments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  college_name TEXT NOT NULL,
+  name TEXT NOT NULL,
+  code TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (college_name, code)
+);
+
+-- ==========================================================
+-- 2.1 DEPARTMENT_YEARS TABLE
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS department_years (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+  year TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (department_id, year)
+);
+
+-- ==========================================================
+-- 3. CUSTOMERS TABLE
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS customers (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -57,6 +84,7 @@ CREATE TABLE IF NOT EXISTS customers (
   roll_number TEXT,
   delivery_method TEXT DEFAULT 'college_delivery',
   department TEXT,
+  department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
   year TEXT,
   section TEXT,
   building_block TEXT,
@@ -69,8 +97,19 @@ CREATE TABLE IF NOT EXISTS customers (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Safe migration to ensure department_id exists if customers was created previously
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'customers' AND column_name = 'department_id'
+  ) THEN
+    ALTER TABLE customers ADD COLUMN department_id UUID REFERENCES departments(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
 -- ==========================================================
--- 3. ORDERS TABLE (With 10-Minute Payment Session Timestamps)
+-- 4. ORDERS TABLE (With 10-Minute Payment Session Timestamps)
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -163,6 +202,10 @@ CREATE INDEX IF NOT EXISTS idx_products_featured ON products(is_featured);
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
 CREATE INDEX IF NOT EXISTS idx_customers_auth_user_id ON customers(auth_user_id);
+CREATE INDEX IF NOT EXISTS idx_customers_department_id ON customers(department_id);
+CREATE INDEX IF NOT EXISTS idx_departments_college_status ON departments(college_name, status);
+CREATE INDEX IF NOT EXISTS idx_department_years_dept_id ON department_years(department_id);
+CREATE INDEX IF NOT EXISTS idx_department_years_status ON department_years(status);
 CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
 CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(order_status);
@@ -177,6 +220,8 @@ CREATE INDEX IF NOT EXISTS idx_admins_auth_user_id ON admins(auth_user_id);
 -- 8. ROW LEVEL SECURITY (RLS) POLICIES
 -- ==========================================================
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE departments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE department_years ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
@@ -368,6 +413,37 @@ CREATE POLICY "Admins can update own record"
   USING (auth.uid() = auth_user_id OR email = auth.jwt() ->> 'email')
   WITH CHECK (auth.uid() = auth_user_id OR email = auth.jwt() ->> 'email');
 
+-- 8.7 DEPARTMENTS POLICIES
+-- Public can view departments
+DROP POLICY IF EXISTS "Departments are viewable by everyone" ON departments;
+CREATE POLICY "Departments are viewable by everyone" 
+  ON departments FOR SELECT 
+  USING (true);
+
+-- Only verified admins can manage departments (insert, update, delete)
+DROP POLICY IF EXISTS "Admins can manage departments" ON departments;
+CREATE POLICY "Admins can manage departments" 
+  ON departments FOR ALL 
+  TO authenticated 
+  USING (is_admin())
+  WITH CHECK (is_admin());
+
+-- 8.8 DEPARTMENT_YEARS POLICIES
+-- Public can view department years
+DROP POLICY IF EXISTS "Department years are viewable by everyone" ON department_years;
+CREATE POLICY "Department years are viewable by everyone" 
+  ON department_years FOR SELECT 
+  USING (true);
+
+-- Only verified admins can manage department years
+DROP POLICY IF EXISTS "Admins can manage department years" ON department_years;
+CREATE POLICY "Admins can manage department years" 
+  ON department_years FOR ALL 
+  TO authenticated 
+  USING (is_admin())
+  WITH CHECK (is_admin());
+
+
 -- ==========================================================
 -- 9. STORAGE BUCKETS CONFIGURATION (Supabase Storage)
 -- ==========================================================
@@ -457,4 +533,32 @@ CREATE POLICY "Admins can manage showcase"
       AND admins.role = 'admin'
     )
   );
+
+-- ==========================================================
+-- 11. DEFAULT DEPARTMENTS SEED DATA
+-- ==========================================================
+INSERT INTO departments (college_name, name, code, status)
+VALUES
+  ('KPR College', 'Artificial Intelligence & Data Science', 'AI&DS', 'active'),
+  ('KPR College', 'Computer Science & Engineering', 'CSE', 'active'),
+  ('KPR College', 'Information Technology', 'IT', 'active'),
+  ('KPR College', 'Mechanical Engineering', 'MECH', 'active'),
+  ('KPR College', 'Mechatronics Engineering', 'MCTR', 'active'),
+  ('KPR College', 'Civil Engineering', 'CIVIL', 'active'),
+  ('KPR College', 'Biomedical Engineering', 'BME', 'active'),
+  ('KPR College', 'Chemical Engineering', 'CHEM', 'active'),
+  ('KPR College', 'Electrical & Electronics Engineering', 'EEE', 'active'),
+  ('KPR College', 'Electronics & Communication Engineering', 'ECE', 'active')
+ON CONFLICT (college_name, code) DO NOTHING;
+
+-- Seed default academic years (1st, 2nd, 3rd, 4th Year) for all departments
+INSERT INTO department_years (department_id, year, status)
+SELECT d.id, y.year, 'active'
+FROM departments d
+CROSS JOIN (
+  VALUES ('1st Year'), ('2nd Year'), ('3rd Year'), ('4th Year')
+) AS y(year)
+ON CONFLICT (department_id, year) DO NOTHING;
+
+
 

@@ -17,7 +17,12 @@ import {
   ArrowRight,
   Sparkles,
   X,
+  Building2,
+  MapPin,
+  Hash,
+  BookOpen,
 } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export const CustomerDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -34,6 +39,8 @@ export const CustomerDashboard: React.FC = () => {
     name: '',
     phone: '',
     college: '',
+    department: '',
+    roll_number: '',
     address: '',
     city: '',
     state: '',
@@ -41,20 +48,41 @@ export const CustomerDashboard: React.FC = () => {
   });
 
   const loadData = async () => {
-    const current = authService.getCurrentCustomer();
+    let current = authService.getCurrentCustomer();
     if (!current) {
       navigate('/login?tab=customer');
       return;
     }
+
+    // Refresh from Supabase if connected to ensure latest department & roll number
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: dbCust } = await supabase
+          .from('customers')
+          .select('*')
+          .or(`id.eq.${current.id},auth_user_id.eq.${current.id},email.eq.${current.email}`)
+          .maybeSingle();
+
+        if (dbCust) {
+          current = { ...current, ...dbCust };
+          localStorage.setItem('printlab_customer_session', JSON.stringify(current));
+        }
+      } catch (custErr) {
+        console.warn('Customer profile refresh error:', custErr);
+      }
+    }
+
     setCustomer(current);
     setProfileForm({
       name: current.name || '',
       phone: current.phone || '',
       college: current.college || '',
+      department: current.department || '',
+      roll_number: current.roll_number || '',
       address: current.address || '',
       city: current.city || '',
-      state: current.state || 'Karnataka',
-      pincode: current.pincode || '560001',
+      state: current.state || 'Tamil Nadu',
+      pincode: current.pincode || '641407',
     });
 
     try {
@@ -139,15 +167,41 @@ export const CustomerDashboard: React.FC = () => {
                 Customer Account
               </span>
             </div>
-            <p className="text-xs text-slate-500 dark:text-neutral-400 font-mono">
-              {customer.email} • {customer.phone}
-            </p>
-            {customer.college && (
-              <p className="text-xs text-slate-600 dark:text-neutral-400 flex items-center gap-1.5">
-                <GraduationCap className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                <span>{customer.college}</span>
-              </p>
-            )}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-neutral-400">
+              <span className="font-mono text-slate-700 dark:text-neutral-300 font-semibold">{customer.email}</span>
+              <span>•</span>
+              <span className="font-mono text-slate-700 dark:text-neutral-300 font-semibold">{customer.phone}</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1 text-xs text-slate-600 dark:text-neutral-400">
+              {customer.college && (
+                <div className="flex items-center gap-1.5">
+                  <GraduationCap className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                  <span className="font-medium text-slate-800 dark:text-neutral-200">{customer.college}</span>
+                </div>
+              )}
+
+              {customer.department && (
+                <div className="flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span className="font-medium text-slate-800 dark:text-neutral-200">Dept: {customer.department}</span>
+                </div>
+              )}
+
+              {customer.roll_number && (
+                <div className="flex items-center gap-1.5 font-mono">
+                  <Hash className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="font-semibold text-slate-800 dark:text-neutral-200">Roll: {customer.roll_number}</span>
+                </div>
+              )}
+
+              {customer.address && (
+                <div className="flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                  <span className="truncate max-w-xs">{customer.address}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -227,6 +281,30 @@ export const CustomerDashboard: React.FC = () => {
                   onChange={(e) => setProfileForm({ ...profileForm, college: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-slate-900 dark:text-white text-xs focus:border-cyan-500 focus:outline-none"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-mono text-slate-700 dark:text-neutral-300 uppercase font-semibold">Department</label>
+                  <input
+                    type="text"
+                    value={profileForm.department}
+                    onChange={(e) => setProfileForm({ ...profileForm, department: e.target.value })}
+                    placeholder="e.g. CSE"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-slate-900 dark:text-white text-xs focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-mono text-slate-700 dark:text-neutral-300 uppercase font-semibold">Roll Number</label>
+                  <input
+                    type="text"
+                    value={profileForm.roll_number}
+                    onChange={(e) => setProfileForm({ ...profileForm, roll_number: e.target.value.toUpperCase() })}
+                    placeholder="e.g. 22CS104"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-slate-900 dark:text-white text-xs font-mono focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1">

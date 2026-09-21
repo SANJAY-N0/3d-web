@@ -7,6 +7,7 @@ import { CloudinaryConfigStatus } from '../../types';
 import { DEFAULT_SUPPORT_CONFIG, getSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
 import { clearLocalCaches } from '../../services/productService';
 import { settingsService } from '../../services/settingsService';
+import { authService } from '../../services/authService';
 import {
   Settings,
   QrCode,
@@ -23,6 +24,7 @@ import {
   Phone,
   MessageSquare,
   Headphones,
+  Key,
 } from 'lucide-react';
 import { useToast } from '../../components/common/Toast';
 
@@ -124,6 +126,34 @@ export const AdminSettings: React.FC = () => {
     localStorage.removeItem('printlab_cloudinary_api_key');
     localStorage.removeItem('printlab_cloudinary_api_secret');
     showToast('Cloudinary media settings saved successfully to database!', 'success');
+  };
+
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      showToast('Password must be at least 6 characters long.', 'error');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      showToast('Passwords do not match.', 'error');
+      return;
+    }
+
+    setUpdatingPassword(true);
+    try {
+      await authService.updateAdminPassword(newPassword);
+      showToast('Admin password updated successfully!', 'success');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update admin password.', 'error');
+    } finally {
+      setUpdatingPassword(false);
+    }
   };
 
   const handleClearCache = () => {
@@ -580,7 +610,67 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
           </div>
         </div>
 
-        {/* Section 5: Local Cache Maintenance */}
+        {/* Section 5: Admin Password & Security */}
+        <div className="bg-white dark:bg-neutral-900/80 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+          <div className="flex items-center gap-3 border-b border-slate-200 dark:border-neutral-800 pb-4">
+            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <Key className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-display font-bold text-base text-slate-900 dark:text-white">Admin Password & Security</h2>
+              <p className="text-xs text-slate-500 dark:text-neutral-400">
+                Update the password for the current administrator account in Supabase Auth.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleUpdatePassword} className="space-y-4 text-xs max-w-lg">
+            <div className="space-y-1.5">
+              <label className="font-mono text-slate-700 dark:text-neutral-300 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>New Password *</span>
+              </label>
+              <input
+                type="password"
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password (e.g. Adminpassword123)"
+                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-amber-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-mono text-slate-700 dark:text-neutral-300 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Confirm New Password *</span>
+              </label>
+              <input
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-amber-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={updatingPassword}
+              className="px-6 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-semibold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-amber-500/20 cursor-pointer transition-all disabled:opacity-50"
+            >
+              {updatingPassword ? (
+                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Key className="w-3.5 h-3.5" />
+              )}
+              <span>Update Admin Password</span>
+            </button>
+          </form>
+        </div>
+
+        {/* Section 6: Local Cache Maintenance */}
         <div className="bg-white dark:bg-neutral-900/80 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-4 shadow-xl">
           <div className="flex items-center gap-3 border-b border-slate-200 dark:border-neutral-800 pb-4">
             <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">

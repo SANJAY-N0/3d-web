@@ -16,6 +16,7 @@ import {
   Sun,
   Moon,
   Sliders,
+  GraduationCap,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useToast } from '../common/Toast';
@@ -86,6 +87,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     { label: 'Orders & Payments', path: '/admin/orders', icon: ShoppingBag },
     { label: 'Product Catalog', path: '/admin/products', icon: Box },
     { label: 'Homepage Showcase', path: '/admin/showcase', icon: Sliders },
+    { label: 'Academic Management', path: '/admin/departments', icon: GraduationCap },
     { label: 'Settings & Supabase', path: '/admin/settings', icon: Settings },
   ];
 
@@ -121,8 +123,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           <div className="space-y-2">
             <Link to="/admin/dashboard" className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-indigo-600 p-0.5 flex items-center justify-center shadow-md">
-                <div className="w-full h-full bg-slate-950 dark:bg-neutral-950 rounded-[6px] flex items-center justify-center">
-                  <Box className="w-4 h-4 text-cyan-400" />
+                <div className="w-full h-full bg-slate-950 dark:bg-neutral-950 rounded-[6px] flex items-center justify-center overflow-hidden">
+                  <img src="/logo.png" alt="PRINTLAB 3D Logo" className="w-full h-full object-contain p-0.5" />
                 </div>
               </div>
               <span className="font-display font-bold text-base text-slate-900 dark:text-white tracking-wide">PRINTLAB 3D</span>

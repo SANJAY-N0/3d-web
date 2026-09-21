@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { authService } from '../services/authService';
+import { departmentService } from '../services/departmentService';
+import { Department } from '../types';
 import { useToast } from '../components/common/Toast';
 import {
   Box,
@@ -20,6 +22,7 @@ import {
   UserPlus,
   RefreshCw,
   CheckCircle2,
+  Calendar,
 } from 'lucide-react';
 
 export const AuthPortal: React.FC = () => {
@@ -55,6 +58,7 @@ export const AuthPortal: React.FC = () => {
     college: 'KPR College',
     roll_number: '',
     department: '',
+    department_id: '',
     year: '3rd Year',
     section: 'A',
     building_block: 'Academic Block III',
@@ -63,6 +67,25 @@ export const AuthPortal: React.FC = () => {
     city: 'Coimbatore',
     pincode: '641407',
   });
+
+  const [availableDepartments, setAvailableDepartments] = useState<Department[]>([]);
+  const [loadingDepts, setLoadingDepts] = useState(false);
+
+  // Load active departments for selected college from Supabase
+  useEffect(() => {
+    if (signupForm.college_type === 'KPR College') {
+      setLoadingDepts(true);
+      departmentService
+        .getActive('KPR College')
+        .then((depts) => {
+          setAvailableDepartments(depts);
+        })
+        .catch((err) => console.warn('Failed to load active departments:', err))
+        .finally(() => setLoadingDepts(false));
+    } else {
+      setAvailableDepartments([]);
+    }
+  }, [signupForm.college_type, signupForm.college]);
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -176,13 +199,18 @@ export const AuthPortal: React.FC = () => {
       setErrorMessage('Please enter a valid email address.');
       return;
     }
-    const cleanPhone = signupForm.phone.replace(/\D/g, '');
-    if (!cleanPhone || cleanPhone.length !== 10) {
-      setErrorMessage('Please enter a valid 10-digit mobile number.');
+    const cleanPhone = signupForm.phone.replace(/\D/g, '').slice(0, 10);
+    if (!cleanPhone || !/^[6-9]\d{9}$/.test(cleanPhone)) {
+      setErrorMessage('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
       return;
     }
     if (!signupForm.password || signupForm.password.length < 6) {
       setErrorMessage('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (signupForm.college_type === 'KPR College' && !signupForm.department.trim()) {
+      setErrorMessage('Please select your department at KPR College.');
       return;
     }
 
@@ -589,11 +617,16 @@ export const AuthPortal: React.FC = () => {
                     </label>
                     <input
                       type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
                       required
                       value={signupForm.phone}
-                      onChange={(e) => setSignupForm({ ...signupForm, phone: e.target.value })}
-                      placeholder="10-digit mobile"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        setSignupForm({ ...signupForm, phone: val });
+                      }}
+                      placeholder="10-digit mobile (e.g. 9876543210)"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none font-mono"
                     />
                   </div>
                 </div>
@@ -664,77 +697,137 @@ export const AuthPortal: React.FC = () => {
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
-                      <Sparkles className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Roll / Reg Number
-                    </label>
-                    <input
-                      type="text"
-                      value={signupForm.roll_number}
-                      onChange={(e) => setSignupForm({ ...signupForm, roll_number: e.target.value.toUpperCase() })}
-                      placeholder="e.g. 22CS104 / 711321..."
-                      className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white font-mono focus:border-cyan-500 focus:outline-none"
-                    />
-                  </div>
+                {/* KPR College Fields: Department & Year of Study */}
+                {signupForm.college_type === 'KPR College' ? (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Department Dropdown */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
+                          <GraduationCap className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Department *
+                        </label>
+                        <select
+                          required
+                          value={signupForm.department_id || ''}
+                          onChange={(e) => {
+                            const selectedId = e.target.value;
+                            const selectedDept = availableDepartments.find((d) => d.id === selectedId);
+                            const deptYears = selectedDept?.years && selectedDept.years.length > 0 ? selectedDept.years : ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+                            setSignupForm({
+                              ...signupForm,
+                              department_id: selectedId,
+                              department: selectedDept ? `${selectedDept.name} (${selectedDept.code})` : '',
+                              year: deptYears.includes(signupForm.year) ? signupForm.year : deptYears[0],
+                            });
+                          }}
+                          className="w-full px-3 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+                        >
+                          <option value="">{loadingDepts ? 'Loading departments...' : 'Select Department *'}</option>
+                          {availableDepartments.map((dept) => (
+                            <option key={dept.id} value={dept.id}>
+                              {dept.name} ({dept.code})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                  {signupForm.college_type === 'KPR College' ? (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
-                        <GraduationCap className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Department
-                      </label>
-                      <select
-                        value={signupForm.department}
-                        onChange={(e) => setSignupForm({ ...signupForm, department: e.target.value })}
-                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-                      >
-                        <option value="">Select Department</option>
-                        <option value="Computer Science & Engineering">CSE</option>
-                        <option value="Artificial Intelligence & Data Science">AI & DS</option>
-                        <option value="Information Technology">IT</option>
-                        <option value="Electronics & Communication">ECE</option>
-                        <option value="Electrical & Electronics">EEE</option>
-                        <option value="Mechanical Engineering">Mechanical</option>
-                        <option value="Civil Engineering">Civil</option>
-                        <option value="Biomedical Engineering">Biomedical</option>
-                        <option value="Chemical Engineering">Chemical</option>
-                        <option value="Mechatronics">Mechatronics</option>
-                        <option value="Other Department">Other Department</option>
-                      </select>
+                      {/* Year of Study Dropdown */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
+                          <Calendar className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Year of Study *
+                        </label>
+                        <select
+                          value={signupForm.year}
+                          onChange={(e) => setSignupForm({ ...signupForm, year: e.target.value })}
+                          className="w-full px-3 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+                        >
+                          {(() => {
+                            const currentDept = availableDepartments.find((d) => d.id === signupForm.department_id);
+                            const yearsList = currentDept?.years && currentDept.years.length > 0 ? currentDept.years : ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+                            return yearsList.map((yr) => (
+                              <option key={yr} value={yr}>
+                                {yr}
+                              </option>
+                            ));
+                          })()}
+                        </select>
+                      </div>
                     </div>
-                  ) : (
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Roll / Reg Number */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
+                          <Sparkles className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Roll / Reg Number
+                        </label>
+                        <input
+                          type="text"
+                          value={signupForm.roll_number}
+                          onChange={(e) => setSignupForm({ ...signupForm, roll_number: e.target.value.toUpperCase() })}
+                          placeholder="e.g. 22CS104 / 711321..."
+                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white font-mono focus:border-cyan-500 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Hostel / Campus Room or Class Delivery */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
+                          <MapPin className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Hostel / Campus Room or Class
+                        </label>
+                        <input
+                          type="text"
+                          value={signupForm.address}
+                          onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
+                          placeholder="e.g. Tharangini Hostel Room 302 or Class CSE-3A"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
+                          <Sparkles className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Roll / Reg Number
+                        </label>
+                        <input
+                          type="text"
+                          value={signupForm.roll_number}
+                          onChange={(e) => setSignupForm({ ...signupForm, roll_number: e.target.value.toUpperCase() })}
+                          placeholder="e.g. 22CS104"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white font-mono focus:border-cyan-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
+                          <MapPin className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> City / Region
+                        </label>
+                        <input
+                          type="text"
+                          value={signupForm.city}
+                          onChange={(e) => setSignupForm({ ...signupForm, city: e.target.value })}
+                          placeholder="e.g. Coimbatore / Chennai"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
                     <div className="space-y-1.5">
                       <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
-                        <MapPin className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> City / Region
+                        <MapPin className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Home Delivery Address
                       </label>
                       <input
                         type="text"
-                        value={signupForm.city}
-                        onChange={(e) => setSignupForm({ ...signupForm, city: e.target.value })}
-                        placeholder="e.g. Coimbatore / Chennai"
+                        value={signupForm.address}
+                        onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
+                        placeholder="e.g. #42 North Street, Gandhi Nagar"
                         className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
                       />
                     </div>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-mono uppercase text-slate-700 dark:text-neutral-300 flex items-center gap-1 font-semibold">
-                    <MapPin className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />{' '}
-                    {signupForm.college_type === 'KPR College' ? 'Hostel / Campus Room or Class Delivery' : 'Home Delivery Address'}
-                  </label>
-                  <input
-                    type="text"
-                    value={signupForm.address}
-                    onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
-                    placeholder={
-                      signupForm.college_type === 'KPR College'
-                        ? 'e.g. Tharangini Hostel Room 302 or Class CSE-3A'
-                        : 'e.g. #42 North Street, Gandhi Nagar'
-                    }
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-                  />
-                </div>
+                  </>
+                )}
 
 
                 <button

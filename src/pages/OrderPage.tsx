@@ -5,6 +5,8 @@ import { productService } from '../services/productService';
 import { customerService } from '../services/customerService';
 import { orderService } from '../services/orderService';
 import { authService } from '../services/authService';
+import { departmentService } from '../services/departmentService';
+import { Department } from '../types';
 import { StepProgress } from '../components/common/StepProgress';
 import { formatINR } from '../lib/upiUtils';
 import { customerSchema, CustomerFormData } from '../lib/validation';
@@ -115,6 +117,18 @@ export const OrderPage: React.FC = () => {
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+  const [departments, setDepartments] = useState<Department[]>([]);
+
+  useEffect(() => {
+    departmentService
+      .getActive('KPR College')
+      .then((data) => {
+        if (data && data.length > 0) {
+          setDepartments(data);
+        }
+      })
+      .catch((err) => console.warn('Failed to load active departments in OrderPage:', err));
+  }, []);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -227,10 +241,14 @@ export const OrderPage: React.FC = () => {
   const totalAmount = unitPrice * quantity;
 
   const handleFieldChange = (field: keyof CustomerFormData, value: any) => {
+    let cleanVal = value;
+    if (field === 'phone') {
+      cleanVal = String(value || '').replace(/\D/g, '').slice(0, 10);
+    }
     setCustomerForm((prev) => {
-      const updated = { ...prev, [field]: value };
+      const updated = { ...prev, [field]: cleanVal };
       // If user switches college_type to Other, automatically switch delivery to home_delivery
-      if (field === 'college_type' && value === 'Other') {
+      if (field === 'college_type' && cleanVal === 'Other') {
         updated.delivery_method = 'home_delivery';
       }
       return updated;
@@ -277,8 +295,15 @@ export const OrderPage: React.FC = () => {
             total_amount: totalAmount,
           }),
         });
-        const valData = await valRes.json();
-        if (!valRes.ok || !valData.valid) {
+        const valText = await valRes.text();
+        let valData: any = null;
+        try {
+          valData = valText ? JSON.parse(valText) : null;
+        } catch {
+          valData = null;
+        }
+
+        if (valData && (!valRes.ok || !valData.valid)) {
           if (valData.errors) {
             setFormErrors(valData.errors);
           }
@@ -307,6 +332,7 @@ export const OrderPage: React.FC = () => {
         roll_number: customerForm.roll_number,
         delivery_method: customerForm.delivery_method,
         department: customerForm.department,
+        department_id: customerForm.department_id || undefined,
         year: customerForm.year,
         section: customerForm.section,
         building_block: customerForm.building_block,
@@ -538,10 +564,12 @@ export const OrderPage: React.FC = () => {
               <input
                 id="phone"
                 type="tel"
+                inputMode="numeric"
+                maxLength={10}
                 required
                 value={customerForm.phone}
                 onChange={(e) => handleFieldChange('phone', e.target.value)}
-                placeholder="e.g. 9876543210"
+                placeholder="10-digit mobile (e.g. 9876543210)"
                 className={`w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-neutral-600 focus:outline-none font-mono ${
                   formErrors.phone ? 'border-rose-500' : 'border-slate-200 dark:border-neutral-800 focus:border-cyan-500'
                 }`}
@@ -728,15 +756,37 @@ export const OrderPage: React.FC = () => {
                       </label>
                       <select
                         id="dept"
-                        value={customerForm.department || KPR_DEPARTMENTS[0]}
-                        onChange={(e) => handleFieldChange('department', e.target.value)}
+                        value={customerForm.department_id || customerForm.department || ''}
+                        onChange={(e) => {
+                          const selectedVal = e.target.value;
+                          const foundDept = departments.find((d) => d.id === selectedVal || d.name === selectedVal);
+                          if (foundDept) {
+                            const deptYears = foundDept.years && foundDept.years.length > 0 ? foundDept.years : YEARS;
+                            setCustomerForm((prev) => ({
+                              ...prev,
+                              department_id: foundDept.id,
+                              department: `${foundDept.name} (${foundDept.code})`,
+                              year: deptYears.includes(prev.year) ? prev.year : deptYears[0],
+                            }));
+                          } else {
+                            handleFieldChange('department', selectedVal);
+                          }
+                        }}
                         className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
                       >
-                        {KPR_DEPARTMENTS.map((d) => (
-                          <option key={d} value={d}>
-                            {d}
-                          </option>
-                        ))}
+                        {departments.length > 0 ? (
+                          departments.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name} ({d.code})
+                            </option>
+                          ))
+                        ) : (
+                          KPR_DEPARTMENTS.map((d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          ))
+                        )}
                       </select>
                     </div>
 
@@ -751,11 +801,15 @@ export const OrderPage: React.FC = () => {
                         onChange={(e) => handleFieldChange('year', e.target.value)}
                         className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
                       >
-                        {YEARS.map((y) => (
-                          <option key={y} value={y}>
-                            {y}
-                          </option>
-                        ))}
+                        {(() => {
+                          const currentDept = departments.find((d) => d.id === customerForm.department_id);
+                          const yearsList = currentDept?.years && currentDept.years.length > 0 ? currentDept.years : YEARS;
+                          return yearsList.map((y) => (
+                            <option key={y} value={y}>
+                              {y}
+                            </option>
+                          ));
+                        })()}
                       </select>
                     </div>
 

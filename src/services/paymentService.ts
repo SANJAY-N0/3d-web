@@ -65,11 +65,18 @@ export const paymentService = {
         body: JSON.stringify(params),
       });
 
-      if (!res.ok) {
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok || !data) {
         throw new Error(`Server returned error ${res.status}`);
       }
 
-      const data = await res.json();
       return data;
     } catch (err: any) {
       console.warn('Backend verification scan unavailable:', err);
@@ -87,24 +94,59 @@ export const paymentService = {
   },
 
   /**
-   * Check if a transaction ID is already used in another order via backend
+   * Check if a transaction ID is already used in another order via backend or Supabase
    */
   async checkDuplicateTransaction(transactionId: string, currentOrderId?: string): Promise<{ isDuplicate: boolean; orderNumber?: string }> {
     if (!transactionId || transactionId.trim().length < 6) {
       return { isDuplicate: false };
     }
 
+    const cleanTx = transactionId.trim().toUpperCase();
+
+    // 1. Try server API with safe JSON parsing
     try {
       const res = await fetch('/api/payments/check-duplicate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transactionId, orderId: currentOrderId }),
+        body: JSON.stringify({ transactionId: cleanTx, orderId: currentOrderId }),
       });
       if (res.ok) {
-        return await res.json();
+        const text = await res.text();
+        try {
+          const json = text ? JSON.parse(text) : null;
+          if (json && typeof json.isDuplicate === 'boolean') {
+            return json;
+          }
+        } catch {
+          // Ignore parse errors on fallback
+        }
       }
     } catch (err) {
       console.warn('Check duplicate transaction endpoint error:', err);
+    }
+
+    // 2. Direct Supabase query fallback
+    if (isSupabaseConfigured && supabase) {
+      try {
+        let query = supabase
+          .from('payments')
+          .select('id, transaction_id, order_id, orders:order_id(id, order_number)')
+          .ilike('transaction_id', cleanTx);
+
+        if (currentOrderId) {
+          query = query.neq('order_id', currentOrderId);
+        }
+
+        const { data: existingPayment } = await query.maybeSingle();
+        if (existingPayment) {
+          return {
+            isDuplicate: true,
+            orderNumber: (existingPayment.orders as any)?.order_number || undefined,
+          };
+        }
+      } catch (err) {
+        console.warn('Direct Supabase check duplicate error:', err);
+      }
     }
 
     return { isDuplicate: false };
@@ -167,29 +209,145 @@ export const paymentService = {
       }
     }
 
-    // 1. Call dedicated server endpoint to create/update payment record and update orders.order_status = 'PAYMENT_PROCESSING'
-    const res = await fetch('/api/payments/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        orderId,
-        amount,
-        transactionId,
-        screenshotUrl,
-        upiId,
-      }),
-    });
+    let submitSuccess = false;
+    let paymentRecordId: string | undefined;
+    let returnedOrderNumber = targetOrderCheck?.order_number;
 
-    const result = await res.json();
-    if (!res.ok || !result.success || !result.payment) {
-      throw new Error(result.error || 'Failed to submit payment proof to database.');
+    // 1. Try server API endpoint with safe JSON parsing
+    try {
+      const res = await fetch('/api/payments/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          amount,
+          transactionId,
+          screenshotUrl,
+          upiId,
+        }),
+      });
+
+      const text = await res.text();
+      let result: any = null;
+      try {
+        result = text ? JSON.parse(text) : null;
+      } catch {
+        console.warn('Non-JSON response from /api/payments/submit:', text?.slice(0, 100));
+      }
+
+      if (res.ok && result?.success && result.payment) {
+        submitSuccess = true;
+        paymentRecordId = result.payment.id;
+        if (result.order?.order_number) {
+          returnedOrderNumber = result.order.order_number;
+        }
+      } else if (result?.error && !result.error.includes('Internal server error')) {
+        throw new Error(result.error);
+      }
+    } catch (apiErr: any) {
+      if (apiErr?.message && !apiErr.message.includes('JSON') && !apiErr.message.includes('fetch')) {
+        throw apiErr;
+      }
+      console.warn('API /api/payments/submit unavailable or returned non-JSON, falling back to direct Supabase:', apiErr);
+    }
+
+    // 2. Direct Supabase Fallback (crucial for Vercel SPA deployments where server.ts is not running)
+    if (!submitSuccess && isSupabaseConfigured && supabase) {
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+      let orderQuery = supabase
+        .from('orders')
+        .select('id, order_number, total_amount, payment_session_expires_at');
+
+      if (isUUID) {
+        orderQuery = orderQuery.or(`id.eq.${orderId},order_number.eq.${orderId}`);
+      } else {
+        orderQuery = orderQuery.ilike('order_number', orderId);
+      }
+
+      const { data: dbOrder, error: orderErr } = await orderQuery.maybeSingle();
+
+      if (orderErr || !dbOrder) {
+        throw new Error('Order not found in database. Payment can only be submitted for an existing order.');
+      }
+
+      returnedOrderNumber = dbOrder.order_number;
+
+      // Check 10-minute session expiration
+      if (dbOrder.payment_session_expires_at) {
+        const expiresAtTime = new Date(dbOrder.payment_session_expires_at).getTime();
+        if (Date.now() >= expiresAtTime) {
+          await supabase
+            .from('orders')
+            .update({ order_status: 'PAYMENT_EXPIRED', updated_at: new Date().toISOString() })
+            .eq('id', dbOrder.id);
+          throw new Error('The 10-minute payment session has expired. This order has been cancelled.');
+        }
+      }
+
+      const cleanTx = transactionId ? String(transactionId).trim().toUpperCase() : null;
+      const paymentPayload: Record<string, any> = {
+        order_id: dbOrder.id,
+        amount: Number(amount) || Number(dbOrder.total_amount) || 0,
+        transaction_id: cleanTx,
+        screenshot_url: screenshotUrl || null,
+        upi_id: upiId || null,
+        payment_status: 'PENDING',
+        updated_at: new Date().toISOString(),
+      };
+
+      // Check existing payment row
+      const { data: existingPayment } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('order_id', dbOrder.id)
+        .maybeSingle();
+
+      if (existingPayment) {
+        const { error: updateErr } = await supabase
+          .from('payments')
+          .update(paymentPayload)
+          .eq('id', existingPayment.id);
+
+        if (updateErr) {
+          console.error('Payment update error in Supabase:', updateErr);
+          throw new Error('Failed to update payment record in database: ' + updateErr.message);
+        }
+        paymentRecordId = existingPayment.id;
+      } else {
+        const { data: newPayment, error: insertErr } = await supabase
+          .from('payments')
+          .insert([paymentPayload])
+          .select('id')
+          .maybeSingle();
+
+        if (insertErr) {
+          console.error('Payment insert error in Supabase:', insertErr);
+          throw new Error('Failed to create payment record in database: ' + insertErr.message);
+        }
+        paymentRecordId = newPayment?.id;
+      }
+
+      // Update order status to PAYMENT_PROCESSING
+      await supabase
+        .from('orders')
+        .update({
+          order_status: 'PAYMENT_PROCESSING',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', dbOrder.id);
+
+      submitSuccess = true;
+    }
+
+    if (!submitSuccess) {
+      throw new Error('Failed to submit payment. Please verify your connection or try again.');
     }
 
     const returnedPayment: Payment = {
-      id: result.payment.id,
-      order_id: result.order?.id || orderId,
-      amount: result.order?.total_amount || amount,
-      transaction_id: result.payment.transaction_id || transactionId,
+      id: paymentRecordId || `pay-${Date.now()}`,
+      order_id: targetOrderCheck?.id || orderId,
+      amount: targetOrderCheck?.total_amount || amount,
+      transaction_id: transactionId,
       screenshot_url: screenshotUrl || undefined,
       upi_id: upiId || undefined,
       payment_status: 'PENDING',

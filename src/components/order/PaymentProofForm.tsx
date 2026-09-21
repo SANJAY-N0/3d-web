@@ -120,15 +120,16 @@ export const PaymentProofForm: React.FC<PaymentProofFormProps> = ({
     setErrorMessage(null);
 
     const trimmedTx = transactionId.trim();
+    const cleanTx = trimmedTx.replace(/\s+/g, '');
 
-    // 1. Validate UTR / Transaction ID
+    // 1. Validate UTR / Transaction ID (Mandatory 12-digit reference)
     if (!trimmedTx) {
       setErrorMessage('Please enter the UPI Transaction ID / UTR from your payment receipt.');
       return;
     }
 
-    if (trimmedTx.length < 6) {
-      setErrorMessage('UPI Transaction ID / UTR should be at least 6 characters.');
+    if (cleanTx.length < 12) {
+      setErrorMessage('UPI Transaction ID / UTR must be at least 12 digits (e.g. 423456789012).');
       return;
     }
 

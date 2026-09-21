@@ -313,15 +313,16 @@ export const PaymentPage: React.FC = () => {
 
     setErrorMessage(null);
     const trimmedTx = transactionId.trim();
+    const cleanTx = trimmedTx.replace(/\s+/g, '');
 
-    // 1. Validate UTR / Transaction ID (Mandatory, customer enters manually)
+    // 1. Validate UTR / Transaction ID (Mandatory 12-digit reference)
     if (!trimmedTx) {
       setErrorMessage('Please enter the UPI Transaction ID / UTR from your payment app.');
       return;
     }
 
-    if (trimmedTx.length < 6) {
-      setErrorMessage('UPI Transaction ID / UTR must be at least 6 characters.');
+    if (cleanTx.length < 12) {
+      setErrorMessage('Please enter a valid 12-digit UPI Transaction ID / UTR (e.g. 423456789012).');
       return;
     }
 
@@ -338,21 +339,45 @@ export const PaymentPage: React.FC = () => {
     setUploadStep('Verifying payment session...');
 
     try {
-      // Backend Enforcement: Verify session on server before accepting payment
-      const verifyRes = await fetch('/api/payments/verify-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: order.id,
-          expiresAt: order.payment_session_expires_at,
-        }),
-      });
+      // 1. Check local session expiration
+      if (order.payment_session_expires_at) {
+        const expiresAtTime = new Date(order.payment_session_expires_at).getTime();
+        if (Date.now() >= expiresAtTime) {
+          await orderService.expirePaymentSession(order.id);
+          setOrder((prev) => (prev ? { ...prev, order_status: 'PAYMENT_EXPIRED' } : null));
+          throw new Error('Payment session has expired. This order has been cancelled.');
+        }
+      }
 
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok || !verifyData.valid) {
-        await orderService.expirePaymentSession(order.id);
-        setOrder((prev) => (prev ? { ...prev, order_status: 'PAYMENT_EXPIRED' } : null));
-        throw new Error(verifyData.error || 'Payment session has expired. This order has been cancelled.');
+      // 2. Backend Enforcement: Verify session on server before accepting payment (with safe non-blocking fallback)
+      try {
+        const verifyRes = await fetch('/api/payments/verify-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId: order.id,
+            expiresAt: order.payment_session_expires_at,
+          }),
+        });
+
+        const verifyText = await verifyRes.text();
+        let verifyData: any = null;
+        try {
+          verifyData = verifyText ? JSON.parse(verifyText) : null;
+        } catch {
+          verifyData = null;
+        }
+
+        if (verifyData && (!verifyRes.ok || !verifyData.valid)) {
+          await orderService.expirePaymentSession(order.id);
+          setOrder((prev) => (prev ? { ...prev, order_status: 'PAYMENT_EXPIRED' } : null));
+          throw new Error(verifyData.error || 'Payment session has expired. This order has been cancelled.');
+        }
+      } catch (sessionErr: any) {
+        if (sessionErr?.message?.includes('expired')) {
+          throw sessionErr;
+        }
+        console.warn('Backend payment session verify check skipped:', sessionErr);
       }
 
       let uploadedScreenshotUrl: string | undefined = undefined;

@@ -194,6 +194,338 @@ async function startServer() {
   });
 
   /**
+   * Public endpoint to fetch active departments and their active years
+   */
+  app.get("/api/academic/departments", async (req, res) => {
+    try {
+      const collegeParam = String(req.query.college || "KPR College").trim();
+      const collegeName = collegeParam.toUpperCase() === "KPR" || collegeParam.toLowerCase().includes("kpr")
+        ? "KPR College"
+        : collegeParam;
+
+      if (!supabaseServer) {
+        return res.json({
+          success: true,
+          data: [],
+        });
+      }
+
+      const { data, error } = await supabaseServer
+        .from("departments")
+        .select("id, name, code, status, department_years(id, year, status)")
+        .eq("college_name", collegeName)
+        .eq("status", "active")
+        .order("name", { ascending: true });
+
+      if (error) {
+        return res.status(500).json({
+          success: false,
+          error: "DATABASE_ERROR",
+          message: error.message,
+        });
+      }
+
+      const formatted = (data || []).map((d: any) => ({
+        id: d.id,
+        name: d.name,
+        code: d.code,
+        years: Array.isArray(d.department_years)
+          ? d.department_years.filter((y: any) => y.status !== "inactive").map((y: any) => y.year)
+          : ["1st Year", "2nd Year", "3rd Year", "4th Year"],
+      }));
+
+      return res.json({
+        success: true,
+        data: formatted,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: "SERVER_ERROR",
+        message: err.message || "Failed to fetch departments.",
+      });
+    }
+  });
+
+  /**
+   * Admin Academic Export Endpoint
+   */
+  app.get("/api/admin/academic/export", requireAdminAuth, async (req, res) => {
+    try {
+      const collegeParam = String(req.query.college || req.query.college_code || "KPR").trim();
+      const collegeCode = collegeParam.toLowerCase().includes("kpr") ? "KPR" : collegeParam.toUpperCase();
+      const collegeName = collegeCode === "KPR" ? "KPR College" : collegeCode;
+
+      if (!supabaseServer) {
+        return res.status(503).json({
+          success: false,
+          error: "DATABASE_UNAVAILABLE",
+          message: "Database service is unavailable on the server.",
+        });
+      }
+
+      const { data, error } = await supabaseServer
+        .from("departments")
+        .select("id, name, code, status, department_years(id, year, status)")
+        .eq("college_name", collegeName)
+        .eq("status", "active")
+        .order("name", { ascending: true });
+
+      if (error) {
+        return res.status(500).json({
+          success: false,
+          error: "DATABASE_ERROR",
+          message: error.message,
+        });
+      }
+
+      const departments = (data || []).map((d: any) => ({
+        name: d.name,
+        code: d.code,
+        years: Array.isArray(d.department_years) && d.department_years.length > 0
+          ? d.department_years.filter((y: any) => y.status !== "inactive").map((y: any) => y.year)
+          : ["1st Year", "2nd Year", "3rd Year", "4th Year"],
+      }));
+
+      return res.json({
+        success: true,
+        data: {
+          college_code: collegeCode,
+          departments,
+        },
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: "SERVER_ERROR",
+        message: err.message || "Failed to export academic data.",
+      });
+    }
+  });
+
+  /**
+   * Admin Academic Import Endpoint (Atomic, fully validated)
+   */
+  app.post("/api/admin/academic/import", requireAdminAuth, async (req, res) => {
+    try {
+      const { college_code, departments, skipExisting = false } = req.body;
+
+      if (!college_code || typeof college_code !== "string" || !college_code.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: "MISSING_COLLEGE_CODE",
+          message: "college_code is required and must be a non-empty string.",
+        });
+      }
+
+      if (!Array.isArray(departments) || departments.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "MISSING_DEPARTMENTS",
+          message: "departments must be a non-empty array.",
+        });
+      }
+
+      const cleanCollegeCode = college_code.trim().toUpperCase();
+      const collegeName = cleanCollegeCode === "KPR" ? "KPR College" : cleanCollegeCode;
+
+      // 1. Validate each department structure
+      const seenCodes = new Set<string>();
+      const normalizedDepts: { name: string; code: string; years: string[] }[] = [];
+
+      for (let i = 0; i < departments.length; i++) {
+        const item = departments[i];
+        const lineNum = i + 1;
+
+        if (!item || typeof item !== "object") {
+          return res.status(400).json({
+            success: false,
+            error: "INVALID_DEPARTMENT",
+            message: `Department #${lineNum}: Invalid department item. Must be an object. No database changes were made.`,
+          });
+        }
+
+        if (!item.name || typeof item.name !== "string" || !item.name.trim()) {
+          return res.status(400).json({
+            success: false,
+            error: "MISSING_NAME",
+            message: `Department #${lineNum}: Missing or empty department "name". No database changes were made.`,
+          });
+        }
+
+        if (!item.code || typeof item.code !== "string" || !item.code.trim()) {
+          return res.status(400).json({
+            success: false,
+            error: "MISSING_CODE",
+            message: `Department #${lineNum}: Missing or empty department "code". No database changes were made.`,
+          });
+        }
+
+        const code = item.code.trim().toUpperCase();
+        if (seenCodes.has(code)) {
+          return res.status(409).json({
+            success: false,
+            error: "DUPLICATE_CODE_IN_FILE",
+            message: `Duplicate department code "${code}" found in import file (Department #${lineNum}). No database changes were made.`,
+          });
+        }
+        seenCodes.add(code);
+
+        if (!Array.isArray(item.years) || item.years.length === 0) {
+          return res.status(400).json({
+            success: false,
+            error: "MISSING_YEARS",
+            message: `Department #${lineNum} ("${code}"): "years" must be a non-empty array of strings. No database changes were made.`,
+          });
+        }
+
+        const distinctYears: string[] = [];
+        const seenYears = new Set<string>();
+        for (const y of item.years) {
+          if (typeof y !== "string" || !y.trim()) {
+            return res.status(400).json({
+              success: false,
+              error: "INVALID_YEAR",
+              message: `Department #${lineNum} ("${code}"): Each year must be a non-empty string. No database changes were made.`,
+            });
+          }
+          const trimmedY = y.trim();
+          if (!seenYears.has(trimmedY)) {
+            seenYears.add(trimmedY);
+            distinctYears.push(trimmedY);
+          }
+        }
+
+        normalizedDepts.push({
+          name: item.name.trim(),
+          code,
+          years: distinctYears,
+        });
+      }
+
+      if (!supabaseServer) {
+        return res.status(503).json({
+          success: false,
+          error: "DATABASE_UNAVAILABLE",
+          message: "Database service unavailable. No changes made.",
+        });
+      }
+
+      // 2. Fetch existing departments for this college to check database conflicts
+      const { data: existingData, error: fetchErr } = await supabaseServer
+        .from("departments")
+        .select("id, code, name, department_years(id, year)")
+        .eq("college_name", collegeName);
+
+      if (fetchErr) {
+        return res.status(500).json({
+          success: false,
+          error: "DATABASE_ERROR",
+          message: `Failed to query existing departments: ${fetchErr.message}`,
+        });
+      }
+
+      const existingCodeMap = new Map<string, any>();
+      (existingData || []).forEach((d: any) => existingCodeMap.set(d.code.toUpperCase(), d));
+
+      // If skipExisting is false, conflict check fails if ANY code already exists
+      if (!skipExisting) {
+        for (let i = 0; i < normalizedDepts.length; i++) {
+          const dept = normalizedDepts[i];
+          if (existingCodeMap.has(dept.code)) {
+            return res.status(409).json({
+              success: false,
+              error: "DUPLICATE_IN_DATABASE",
+              message: `Department code "${dept.code}" already exists for college "${cleanCollegeCode}". No database changes were made.`,
+            });
+          }
+        }
+      }
+
+      // 3. Atomically perform insertions
+      let departmentsCreated = 0;
+      let departmentsSkipped = 0;
+      let yearsCreated = 0;
+      let yearsSkipped = 0;
+
+      for (const dept of normalizedDepts) {
+        let currentDept = existingCodeMap.get(dept.code);
+
+        if (!currentDept) {
+          const { data: insertedDept, error: insertErr } = await supabaseServer
+            .from("departments")
+            .insert([{
+              college_name: collegeName,
+              name: dept.name,
+              code: dept.code,
+              status: "active",
+            }])
+            .select()
+            .single();
+
+          if (insertErr) {
+            return res.status(500).json({
+              success: false,
+              error: "INSERT_ERROR",
+              message: `Failed to insert department "${dept.code}": ${insertErr.message}`,
+            });
+          }
+
+          currentDept = insertedDept;
+          departmentsCreated++;
+          existingCodeMap.set(dept.code, currentDept);
+        } else {
+          departmentsSkipped++;
+        }
+
+        // Insert years
+        const existingYears = new Set<string>();
+        if (Array.isArray(currentDept.department_years)) {
+          currentDept.department_years.forEach((y: any) => existingYears.add(y.year));
+        }
+
+        for (const yr of dept.years) {
+          if (!existingYears.has(yr)) {
+            const { error: yrErr } = await supabaseServer
+              .from("department_years")
+              .insert([{
+                department_id: currentDept.id,
+                year: yr,
+                status: "active",
+              }]);
+
+            if (yrErr) {
+              console.warn(`Could not insert year "${yr}" for department "${dept.code}":`, yrErr.message);
+            } else {
+              existingYears.add(yr);
+              yearsCreated++;
+            }
+          } else {
+            yearsSkipped++;
+          }
+        }
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          departmentsCreated,
+          departmentsSkipped,
+          yearsCreated,
+          yearsSkipped,
+        },
+        message: `Academic data imported successfully. ${departmentsCreated} departments imported, ${yearsCreated} years imported.`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: "INTERNAL_ERROR",
+        message: err.message || "Failed to process academic import.",
+      });
+    }
+  });
+
+  /**
    * Server-side validation endpoint for customer, college & delivery information
    */
   app.post("/api/orders/validate", (req, res) => {
@@ -228,9 +560,9 @@ async function startServer() {
         errors.email = "A valid email address is required.";
       }
 
-      const phoneClean = String(phone || "").replace(/\D/g, "");
-      if (!phoneClean || phoneClean.length !== 10) {
-        errors.phone = "A valid 10-digit mobile number is required.";
+      const phoneClean = String(phone || "").replace(/\D/g, "").slice(0, 10);
+      if (!phoneClean || !/^[6-9]\d{9}$/.test(phoneClean)) {
+        errors.phone = "A valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 is required.";
       }
 
       if (college_type === "Other") {
@@ -381,6 +713,7 @@ async function startServer() {
           roll_number: customer.roll_number || "",
           delivery_method: customer.delivery_method || "college_delivery",
           department: customer.department || "",
+          department_id: customer.department_id || null,
           year: customer.year || "",
           section: customer.section || "",
           building_block: customer.building_block || "",

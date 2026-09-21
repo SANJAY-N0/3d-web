@@ -68,8 +68,8 @@ export const Navbar: React.FC = () => {
           {/* Logo / Brand */}
           <Link to="/" className="flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 p-0.5 flex items-center justify-center shadow-lg shadow-cyan-500/20 group-hover:scale-105 transition-transform">
-              <div className="w-full h-full bg-white dark:bg-neutral-950 rounded-[10px] flex items-center justify-center">
-                <Box className="w-5 h-5 text-cyan-500 dark:text-cyan-400 group-hover:rotate-12 transition-transform" />
+              <div className="w-full h-full bg-white dark:bg-neutral-950 rounded-[10px] flex items-center justify-center overflow-hidden">
+                <img src="/logo.png" alt="PRINTLAB 3D Logo" className="w-full h-full object-contain p-0.5" />
               </div>
             </div>
             <div className="flex flex-col">

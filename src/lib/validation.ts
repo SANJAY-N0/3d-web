@@ -6,7 +6,7 @@ export const customerSchema = z
     phone: z
       .string()
       .trim()
-      .regex(/^[0-9]{10}$/, 'Please enter a valid 10-digit mobile number.'),
+      .regex(/^[6-9]\d{9}$/, 'Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.'),
     email: z
       .string()
       .trim()
@@ -18,6 +18,7 @@ export const customerSchema = z
 
     // KPR College delivery fields
     department: z.string().optional().or(z.literal('')),
+    department_id: z.string().optional().or(z.literal('')),
     year: z.string().optional().or(z.literal('')),
     section: z.string().optional().or(z.literal('')),
     building_block: z.string().optional().or(z.literal('')),

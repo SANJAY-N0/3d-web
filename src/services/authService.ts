@@ -138,6 +138,24 @@ export const authService = {
     return Boolean(localStorage.getItem(ADMIN_SESSION_KEY));
   },
 
+  async updateAdminPassword(newPassword: string): Promise<void> {
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Supabase is not configured.');
+    }
+
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Failed to update admin password.');
+    }
+  },
+
   // ================= CUSTOMER AUTH =================
   getCurrentCustomer(): CustomerUser | null {
     try {
@@ -314,6 +332,7 @@ export const authService = {
         roll_number: profile?.roll_number,
         delivery_method: profile?.delivery_method || 'college_delivery',
         department: profile?.department,
+        department_id: profile?.department_id,
         year: profile?.year,
         section: profile?.section,
         building_block: profile?.building_block,
@@ -353,6 +372,7 @@ export const authService = {
     roll_number?: string;
     delivery_method?: 'college_delivery' | 'home_delivery';
     department?: string;
+    department_id?: string;
     year?: string;
     section?: string;
     building_block?: string;
@@ -362,10 +382,14 @@ export const authService = {
     state?: string;
     pincode?: string;
   }): Promise<CustomerUser & { needsEmailConfirmation?: boolean }> {
-    const cleanPhone = data.phone ? data.phone.replace(/\D/g, '') : '';
+    const cleanPhone = data.phone ? data.phone.replace(/\D/g, '').slice(0, 10) : '';
     const cleanEmail = data.email ? data.email.trim().toLowerCase() : '';
     const collegeType = data.college_type || (data.college?.toLowerCase().includes('kpr') ? 'KPR College' : 'Other');
     const collegeName = collegeType === 'KPR College' ? 'KPR College' : (data.college?.trim() || 'Other College');
+
+    if (!cleanPhone || !/^[6-9]\d{9}$/.test(cleanPhone)) {
+      throw new Error('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
+    }
 
     if (!data.password || data.password.length < 6) {
       throw new Error('Password is required and must be at least 6 characters.');
@@ -430,6 +454,7 @@ export const authService = {
           roll_number: data.roll_number?.trim() || '',
           delivery_method: data.delivery_method || (collegeType === 'KPR College' ? 'college_delivery' : 'home_delivery'),
           department: data.department?.trim() || '',
+          department_id: data.department_id || null,
           year: data.year?.trim() || '',
           section: data.section?.trim() || '',
           building_block: data.building_block?.trim() || '',
@@ -466,6 +491,7 @@ export const authService = {
       roll_number: data.roll_number?.trim() || '',
       delivery_method: data.delivery_method || (collegeType === 'KPR College' ? 'college_delivery' : 'home_delivery'),
       department: data.department?.trim() || '',
+      department_id: data.department_id,
       year: data.year?.trim() || '',
       section: data.section?.trim() || '',
       building_block: data.building_block?.trim() || '',
