@@ -142,6 +142,36 @@ export async function fetchSupportConfigFromDB(): Promise<SupportConfig> {
   return updated;
 }
 
+let isRealtimeSubscribed = false;
+
+function initGlobalSupportRealtime() {
+  if (isRealtimeSubscribed || !isSupabaseConfigured || !supabase) return;
+  isRealtimeSubscribed = true;
+
+  try {
+    supabase
+      .channel('support-settings-global-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'settings' },
+        (payload: any) => {
+          const newRow = payload.new;
+          if (
+            newRow &&
+            (newRow.key === 'support_whatsapp' ||
+              newRow.key === 'support_phone' ||
+              newRow.key === 'support_alt_phone')
+          ) {
+            fetchSupportConfigFromDB();
+          }
+        }
+      )
+      .subscribe();
+  } catch (err) {
+    console.warn('Realtime support subscription warning:', err);
+  }
+}
+
 /**
  * React hook to get real-time updated support configuration
  */
@@ -154,7 +184,10 @@ export function useSupportConfig(): SupportConfig {
       setConfig(data);
     });
 
-    // 2. Listen to custom window update events (e.g. when changed in AdminSettings)
+    // 2. Initialize global realtime singleton
+    initGlobalSupportRealtime();
+
+    // 3. Listen to custom window update events (triggered when DB changes or admin saves)
     const handleUpdate = (e: any) => {
       if (e.detail) {
         setConfig(e.detail);
@@ -164,36 +197,8 @@ export function useSupportConfig(): SupportConfig {
     };
     window.addEventListener('printlab_support_settings_updated', handleUpdate);
 
-    // 3. Supabase Realtime listener on settings table
-    let channel: any = null;
-    if (isSupabaseConfigured && supabase) {
-      channel = supabase
-        .channel('support-settings-realtime-listener')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'settings' },
-          (payload: any) => {
-            const newRow = payload.new;
-            if (
-              newRow &&
-              (newRow.key === 'support_whatsapp' ||
-                newRow.key === 'support_phone' ||
-                newRow.key === 'support_alt_phone')
-            ) {
-              fetchSupportConfigFromDB().then((data) => {
-                setConfig(data);
-              });
-            }
-          }
-        )
-        .subscribe();
-    }
-
     return () => {
       window.removeEventListener('printlab_support_settings_updated', handleUpdate);
-      if (channel && supabase) {
-        supabase.removeChannel(channel);
-      }
     };
   }, []);
 
