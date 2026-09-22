@@ -46,7 +46,7 @@ export const AdminProducts: React.FC = () => {
   useEffect(() => {
     loadProducts();
 
-    if (isSupabaseConfigured() && supabase) {
+    if (isSupabaseConfigured && supabase) {
       const channel = supabase
         .channel('admin-products-sync')
         .on(
