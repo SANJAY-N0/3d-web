@@ -1,6 +1,6 @@
 import React from 'react';
 import { Phone, MessageSquare, HelpCircle } from 'lucide-react';
-import { getSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
+import { useSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
 
 interface CustomerSupportCardProps {
   orderNumber?: string;
@@ -8,7 +8,7 @@ interface CustomerSupportCardProps {
 }
 
 export const CustomerSupportCard: React.FC<CustomerSupportCardProps> = ({ orderNumber, className = '' }) => {
-  const support = getSupportConfig();
+  const support = useSupportConfig();
   const whatsappMsg = orderNumber
     ? `Hello PrintLab 3D! I need help regarding my order #${orderNumber}.`
     : 'Hello PrintLab 3D! I have an enquiry about 3D printing orders.';
@@ -35,7 +35,7 @@ export const CustomerSupportCard: React.FC<CustomerSupportCardProps> = ({ orderN
             <div className="flex flex-col">
               <span className="text-[10px] uppercase font-mono text-slate-400 dark:text-neutral-500 font-semibold">Call</span>
               <a
-                href={`tel:${support.phone.replace(/\s+/g, '')}`}
+                href={`tel:${(support.phone || '').replace(/\s+/g, '')}`}
                 className="font-mono text-slate-800 dark:text-neutral-200 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors font-medium"
               >
                 {support.phone}
@@ -44,7 +44,7 @@ export const CustomerSupportCard: React.FC<CustomerSupportCardProps> = ({ orderN
           </div>
 
           <a
-            href={`tel:${support.phone.replace(/\s+/g, '')}`}
+            href={`tel:${(support.phone || '').replace(/\s+/g, '')}`}
             className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-300 text-[11px] font-mono transition-colors"
           >
             Call
@@ -90,7 +90,7 @@ export const CustomerSupportCard: React.FC<CustomerSupportCardProps> = ({ orderN
               <div className="flex flex-col">
                 <span className="text-[10px] uppercase font-mono text-slate-400 dark:text-neutral-500 font-semibold">Alternative</span>
                 <a
-                  href={`tel:${support.altPhone.replace(/\s+/g, '')}`}
+                  href={`tel:${(support.altPhone || '').replace(/\s+/g, '')}`}
                   className="font-mono text-slate-800 dark:text-neutral-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors font-medium"
                 >
                   {support.altPhone}
@@ -99,7 +99,7 @@ export const CustomerSupportCard: React.FC<CustomerSupportCardProps> = ({ orderN
             </div>
 
             <a
-              href={`tel:${support.altPhone.replace(/\s+/g, '')}`}
+              href={`tel:${(support.altPhone || '').replace(/\s+/g, '')}`}
               className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-300 text-[11px] font-mono transition-colors"
             >
               Call

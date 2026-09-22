@@ -20,6 +20,7 @@ import {
   ImageIcon,
 } from 'lucide-react';
 import { useToast } from '../../components/common/Toast';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 export const AdminProducts: React.FC = () => {
   const { showToast } = useToast();
@@ -44,6 +45,34 @@ export const AdminProducts: React.FC = () => {
 
   useEffect(() => {
     loadProducts();
+
+    if (isSupabaseConfigured() && supabase) {
+      const channel = supabase
+        .channel('admin-products-sync')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'products' },
+          (payload) => {
+            if (payload.eventType === 'UPDATE') {
+              const updated = payload.new as Product;
+              setProducts((prev) =>
+                prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+              );
+            } else if (payload.eventType === 'INSERT') {
+              const inserted = payload.new as Product;
+              setProducts((prev) => [inserted, ...prev.filter((p) => p.id !== inserted.id)]);
+            } else if (payload.eventType === 'DELETE') {
+              const deleted = payload.old as { id: string };
+              setProducts((prev) => prev.filter((p) => p.id !== deleted.id));
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, []);
 
   const handleCreateNew = () => {
@@ -175,34 +204,61 @@ export const AdminProducts: React.FC = () => {
                   <Box className="w-8 h-8 text-cyan-500 mb-1" />
                   <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400">3D Model Ready</span>
                 </div>
-                <div className="absolute top-2 left-2 flex flex-wrap gap-1.5">
+                <div className="absolute top-2 left-2 flex flex-wrap gap-1.5 max-w-[70%]">
                   <span className="px-2 py-0.5 rounded bg-black/80 backdrop-blur-md text-[10px] font-mono text-cyan-300 border border-neutral-700">
                     {prod.category}
+                  </span>
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                    (prod.stock_quantity ?? prod.stock ?? 50) <= 0
+                      ? 'bg-rose-500 text-white'
+                      : (prod.stock_quantity ?? prod.stock ?? 50) <= 5
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-slate-900/80 text-white border border-neutral-700'
+                  }`}>
+                    Stock: {prod.stock_quantity ?? prod.stock ?? 50}
                   </span>
                   {prod.is_featured && (
                     <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-mono">
                       ★ Featured
                     </span>
                   )}
-                  {((prod.gallery_images && prod.gallery_images.length > 1) || (prod.gallery_urls && prod.gallery_urls.length > 1)) && (
-                    <span className="px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-700/50 text-[9px] font-mono flex items-center gap-1">
-                      <ImageIcon className="w-2.5 h-2.5" />
-                      {prod.gallery_images?.length || prod.gallery_urls?.length}
-                    </span>
-                  )}
                 </div>
 
-                <div className="absolute top-2 right-2">
+                <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
                   <button
                     onClick={() => handleToggleAvailability(prod)}
                     className={`px-2 py-0.5 rounded text-[10px] font-mono border backdrop-blur-md transition-colors cursor-pointer ${
-                      prod.is_available
+                      prod.is_available && (prod.stock_quantity ?? prod.stock ?? 50) > 0
                         ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/30'
                         : 'bg-rose-950/90 text-rose-300 border-rose-500/30'
                     }`}
                   >
-                    {prod.is_available ? '✓ In Stock' : '✕ Out of Stock'}
+                    {prod.is_available && (prod.stock_quantity ?? prod.stock ?? 50) > 0 ? '✓ Active' : '✕ Out of Stock'}
                   </button>
+
+                  {/* Channel availability badges */}
+                  <div className="flex items-center gap-1 text-[9px] font-mono font-bold">
+                    <span
+                      title="Online Store Availability"
+                      className={`px-1 py-0.2 rounded border backdrop-blur-md ${
+                        prod.online_available !== false
+                          ? 'bg-cyan-950/80 text-cyan-300 border-cyan-600/40'
+                          : 'bg-neutral-900/80 text-neutral-500 border-neutral-700 line-through'
+                      }`}
+                    >
+                      Online {prod.online_available !== false ? '✓' : '✗'}
+                    </span>
+                    <span
+                      title="On-Spot POS Availability"
+                      className={`px-1 py-0.2 rounded border backdrop-blur-md ${
+                        prod.on_spot_available !== false
+                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-600/40'
+                          : 'bg-neutral-900/80 text-neutral-500 border-neutral-700 line-through'
+                      }`}
+                    >
+                      POS {prod.on_spot_available !== false ? '✓' : '✗'}
+                    </span>
+                  </div>
                 </div>
               </div>
 

@@ -14,6 +14,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const imageUrl = product.main_image || product.image_url;
   const optimizedUrl = cloudinaryPresets.card(imageUrl);
 
+  const stock =
+    (product as any).stock_quantity !== undefined && (product as any).stock_quantity !== null
+      ? Number((product as any).stock_quantity)
+      : (product as any).stock !== undefined
+      ? Number((product as any).stock)
+      : (product.is_available ? 50 : 0);
+
+  const isOutOfStock = stock <= 0 || !product.is_available || product.online_available === false;
+  const isLowStock = !isOutOfStock && stock <= 5;
+
   return (
     <Link
       to={`/products/${product.slug || product.id}`}
@@ -46,11 +56,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           </span>
         </div>
 
-        {/* Status tag only when Out of Stock */}
-        {!product.is_available ? (
+        {/* Status tag */}
+        {isOutOfStock ? (
           <div className="absolute top-2.5 right-2.5">
             <span className="px-2 py-0.5 text-[10px] font-mono rounded-lg bg-rose-100 dark:bg-rose-950/90 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-500/40 font-semibold">
               Out of Stock
+            </span>
+          </div>
+        ) : isLowStock ? (
+          <div className="absolute top-2.5 right-2.5">
+            <span className="px-2 py-0.5 text-[10px] font-mono rounded-lg bg-amber-100 dark:bg-amber-950/90 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 font-semibold">
+              Only {stock} left!
             </span>
           </div>
         ) : product.is_featured ? (

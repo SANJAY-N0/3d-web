@@ -71,6 +71,8 @@ export const CustomerDashboard: React.FC = () => {
         console.warn('Customer profile refresh error:', custErr);
       }
     }
+ 
+    if (!current) return;
 
     setCustomer(current);
     setProfileForm({

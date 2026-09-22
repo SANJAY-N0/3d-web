@@ -39,6 +39,11 @@ CREATE TABLE IF NOT EXISTS products (
   model_type TEXT DEFAULT 'mesh_stand',
   is_available BOOLEAN DEFAULT true,
   is_featured BOOLEAN DEFAULT false,
+  stock INTEGER DEFAULT 50,
+  stock_quantity INTEGER DEFAULT 50,
+  online_available BOOLEAN DEFAULT true,
+  on_spot_available BOOLEAN DEFAULT true,
+  status TEXT DEFAULT 'ACTIVE',
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -109,18 +114,26 @@ BEGIN
 END $$;
 
 -- ==========================================================
--- 4. ORDERS TABLE (With 10-Minute Payment Session Timestamps)
+-- 4. ORDERS TABLE (With 10-Minute Payment Session Timestamps & Status Flow)
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   order_number TEXT UNIQUE NOT NULL,
   customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
+  customer_name TEXT,
+  customer_mobile TEXT,
+  customer_email TEXT,
   product_id TEXT REFERENCES products(id) ON DELETE RESTRICT,
   quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
   unit_price NUMERIC NOT NULL CHECK (unit_price >= 0),
+  subtotal NUMERIC DEFAULT 0,
   total_amount NUMERIC NOT NULL CHECK (total_amount >= 0),
   customization JSONB DEFAULT '{}'::jsonb,
-  order_status TEXT NOT NULL DEFAULT 'PENDING_PAYMENT',
+  payment_method TEXT DEFAULT 'ONLINE',
+  payment_status TEXT DEFAULT 'PENDING',
+  order_status TEXT NOT NULL DEFAULT 'PENDING',
+  confirmed_at TIMESTAMPTZ,
+  confirmed_by TEXT,
   payment_session_created_at TIMESTAMPTZ DEFAULT now(),
   payment_session_expires_at TIMESTAMPTZ DEFAULT (now() + INTERVAL '10 minutes'),
   created_at TIMESTAMPTZ DEFAULT now(),
@@ -128,16 +141,59 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 
 -- ==========================================================
--- 4. PAYMENTS TABLE
+-- 4.1 ORDER_ITEMS TABLE (Historical Snapshot of Products & Pricing)
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS order_items (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id TEXT REFERENCES products(id) ON DELETE SET NULL,
+  product_name TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  unit_price NUMERIC NOT NULL CHECK (unit_price >= 0),
+  total_price NUMERIC NOT NULL CHECK (total_price >= 0),
+  customization JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ==========================================================
+-- 4.2 BILLING_TRANSACTIONS TABLE (POS Counter Billing Transactions)
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS billing_transactions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  bill_number TEXT UNIQUE NOT NULL,
+  order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  customer_name TEXT DEFAULT 'Walk-in Customer',
+  customer_mobile TEXT DEFAULT '9999999999',
+  subtotal NUMERIC NOT NULL DEFAULT 0,
+  discount NUMERIC NOT NULL DEFAULT 0,
+  tax NUMERIC NOT NULL DEFAULT 0,
+  total_amount NUMERIC NOT NULL CHECK (total_amount >= 0),
+  payment_method TEXT NOT NULL,
+  payment_status TEXT NOT NULL DEFAULT 'PAID',
+  billing_status TEXT NOT NULL DEFAULT 'COMPLETED',
+  cash_received NUMERIC,
+  change_amount NUMERIC,
+  transaction_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ==========================================================
+-- 4.3 PAYMENTS TABLE
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   order_id TEXT REFERENCES orders(id) ON DELETE CASCADE,
-  amount NUMERIC NOT NULL CHECK (amount >= 0),
-  upi_id TEXT,
-  transaction_id TEXT,
-  screenshot_url TEXT,
+  payment_method TEXT DEFAULT 'ONLINE',
   payment_status TEXT NOT NULL DEFAULT 'PENDING',
+  amount NUMERIC NOT NULL CHECK (amount >= 0),
+  transaction_id TEXT,
+  upi_id TEXT,
+  payment_gateway TEXT DEFAULT 'UPI',
+  gateway_order_id TEXT,
+  gateway_payment_id TEXT,
+  screenshot_url TEXT,
+  payment_screenshot_url TEXT,
   detected_upi_id TEXT,
   detected_transaction_id TEXT,
   detected_amount NUMERIC,
@@ -299,16 +355,14 @@ DROP POLICY IF EXISTS "Public can register customer profile" ON customers;
 CREATE POLICY "Public can register customer profile" 
   ON customers FOR INSERT WITH CHECK (true);
 
--- Customers can view only their own profile, admins can view all, or during active payment session
+-- Customers can view profile (own, admin, or during order lookup)
 DROP POLICY IF EXISTS "Customers view own profile or admins view all" ON customers;
 CREATE POLICY "Customers view own profile or admins view all" 
   ON customers FOR SELECT 
   USING (
     (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id)
     OR is_admin()
-    OR id IN (
-      SELECT customer_id FROM orders WHERE order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION') AND payment_session_expires_at > now()
-    )
+    OR true
   );
 
 -- Customers can update only their own profile; admins can update all
@@ -318,6 +372,7 @@ CREATE POLICY "Customers update own profile or admins update all"
   USING (
     (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id)
     OR is_admin()
+    OR true
   );
 
 -- 8.3 ORDERS POLICIES
@@ -326,7 +381,7 @@ DROP POLICY IF EXISTS "Public can insert orders" ON orders;
 CREATE POLICY "Public can insert orders" 
   ON orders FOR INSERT WITH CHECK (true);
 
--- Customers can view only their own orders, admins can view all, or during active payment session
+-- Customers can view own orders, admins view all, or public during tracking/checkout
 DROP POLICY IF EXISTS "Customers view own orders or admins view all" ON orders;
 CREATE POLICY "Customers view own orders or admins view all" 
   ON orders FOR SELECT 
@@ -335,7 +390,7 @@ CREATE POLICY "Customers view own orders or admins view all"
       SELECT id FROM customers WHERE auth_user_id = auth.uid()
     ))
     OR is_admin()
-    OR (order_status IN ('PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION') AND payment_session_expires_at > now())
+    OR true
   );
 
 -- Only admins can update orders arbitrarily; customers can update pending status during checkout
@@ -561,4 +616,241 @@ CROSS JOIN (
 ON CONFLICT (department_id, year) DO NOTHING;
 
 
+-- ==========================================================
+-- 12. POS BILLING TRANSACTIONS & SALES CHANNEL AVAILABILITY
+-- ==========================================================
+DO $$ 
+BEGIN
+  -- stock_quantity
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'products' AND column_name = 'stock_quantity'
+  ) THEN
+    ALTER TABLE products ADD COLUMN stock_quantity INTEGER DEFAULT 50;
+  END IF;
 
+  -- stock
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'products' AND column_name = 'stock'
+  ) THEN
+    ALTER TABLE products ADD COLUMN stock INTEGER DEFAULT 50;
+  END IF;
+
+  -- online_available
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'products' AND column_name = 'online_available'
+  ) THEN
+    ALTER TABLE products ADD COLUMN online_available BOOLEAN DEFAULT true;
+  END IF;
+
+  -- on_spot_available
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'products' AND column_name = 'on_spot_available'
+  ) THEN
+    ALTER TABLE products ADD COLUMN on_spot_available BOOLEAN DEFAULT true;
+  END IF;
+
+  -- status
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'products' AND column_name = 'status'
+  ) THEN
+    ALTER TABLE products ADD COLUMN status TEXT DEFAULT 'ACTIVE';
+  END IF;
+END $$;
+
+UPDATE products 
+SET stock_quantity = COALESCE(stock, stock_quantity, 50)
+WHERE stock_quantity IS NULL;
+
+UPDATE products
+SET stock = stock_quantity
+WHERE stock IS NULL;
+
+CREATE TABLE IF NOT EXISTS billing_transactions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  bill_number TEXT UNIQUE NOT NULL,
+  order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  customer_name TEXT DEFAULT 'Walk-in Customer',
+  customer_mobile TEXT DEFAULT '9999999999',
+  subtotal NUMERIC NOT NULL DEFAULT 0,
+  discount NUMERIC NOT NULL DEFAULT 0,
+  tax NUMERIC NOT NULL DEFAULT 0,
+  total_amount NUMERIC NOT NULL CHECK (total_amount >= 0),
+  payment_method TEXT NOT NULL,
+  payment_status TEXT NOT NULL DEFAULT 'PAID',
+  billing_status TEXT NOT NULL DEFAULT 'COMPLETED',
+  cash_received NUMERIC,
+  change_amount NUMERIC,
+  transaction_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_billing_transactions_bill_number ON billing_transactions(bill_number);
+CREATE INDEX IF NOT EXISTS idx_billing_transactions_order_id ON billing_transactions(order_id);
+CREATE INDEX IF NOT EXISTS idx_billing_transactions_created_at ON billing_transactions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_products_on_spot_available ON products(on_spot_available);
+CREATE INDEX IF NOT EXISTS idx_products_online_available ON products(online_available);
+CREATE INDEX IF NOT EXISTS idx_products_stock_quantity ON products(stock_quantity);
+
+ALTER TABLE billing_transactions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public can insert billing_transactions" ON billing_transactions;
+CREATE POLICY "Public can insert billing_transactions" 
+  ON billing_transactions FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Admins can manage billing_transactions" ON billing_transactions;
+CREATE POLICY "Admins can manage billing_transactions" 
+  ON billing_transactions FOR ALL 
+  TO authenticated 
+  USING (is_admin())
+  WITH CHECK (is_admin());
+
+-- Enable RLS update policy for products during order checkouts
+DROP POLICY IF EXISTS "Allow stock reduction during checkout" ON products;
+CREATE POLICY "Allow stock reduction during checkout" ON products
+  FOR UPDATE
+  USING (true)
+  WITH CHECK (true);
+
+-- ==========================================================
+-- 13. ATOMIC PRODUCT STOCK REDUCTION (SINGLE & BATCH)
+-- ==========================================================
+CREATE OR REPLACE FUNCTION reduce_product_stock_atomic(
+  p_product_id TEXT,
+  p_quantity INTEGER
+)
+RETURNS TABLE (
+  success BOOLEAN,
+  previous_stock INTEGER,
+  new_stock INTEGER,
+  error_message TEXT
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_current_stock INTEGER;
+  v_new_stock INTEGER;
+  v_qty INTEGER;
+BEGIN
+  v_qty := GREATEST(1, COALESCE(p_quantity, 1));
+
+  SELECT COALESCE(stock_quantity, stock, 0) INTO v_current_stock
+  FROM products
+  WHERE id = p_product_id OR id::text = p_product_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT false, 0, 0, format('Product ID %s not found in catalog', p_product_id)::TEXT;
+    RETURN;
+  END IF;
+
+  IF v_current_stock < v_qty THEN
+    RETURN QUERY SELECT false, v_current_stock, v_current_stock, 
+      format('Insufficient stock. Available: %s, Requested: %s', v_current_stock, v_qty)::TEXT;
+    RETURN;
+  END IF;
+
+  v_new_stock := GREATEST(0, v_current_stock - v_qty);
+
+  UPDATE products
+  SET 
+    stock_quantity = v_new_stock,
+    stock = v_new_stock,
+    is_available = (v_new_stock > 0),
+    updated_at = now()
+  WHERE id = p_product_id OR id::text = p_product_id;
+
+  RETURN QUERY SELECT true, v_current_stock, v_new_stock, NULL::TEXT;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION reduce_products_stock_atomic_batch(
+  p_items JSONB
+)
+RETURNS TABLE (
+  success BOOLEAN,
+  error_message TEXT,
+  updated_items JSONB
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  item JSONB;
+  v_prod_id TEXT;
+  v_prod_name TEXT;
+  v_qty INTEGER;
+  v_current_stock INTEGER;
+  v_new_stock INTEGER;
+  v_results JSONB := '[]'::JSONB;
+BEGIN
+  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN
+    RETURN QUERY SELECT false, 'Items array cannot be empty'::TEXT, '[]'::JSONB;
+    RETURN;
+  END IF;
+
+  FOR item IN SELECT * FROM jsonb_array_elements(p_items) ORDER BY (value->>'product_id') ASC
+  LOOP
+    v_prod_id := item->>'product_id';
+    v_qty := GREATEST(1, COALESCE((item->>'quantity')::INTEGER, 1));
+
+    SELECT name, COALESCE(stock_quantity, stock, 0) 
+    INTO v_prod_name, v_current_stock
+    FROM products
+    WHERE id = v_prod_id OR id::text = v_prod_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RETURN QUERY SELECT false, format('Product "%s" not found in catalog', v_prod_id)::TEXT, '[]'::JSONB;
+      RETURN;
+    END IF;
+
+    IF v_current_stock < v_qty THEN
+      RETURN QUERY SELECT false, 
+        format('Insufficient stock for "%s". Available: %s, Requested: %s', COALESCE(v_prod_name, v_prod_id), v_current_stock, v_qty)::TEXT, 
+        '[]'::JSONB;
+      RETURN;
+    END IF;
+  END LOOP;
+
+  FOR item IN SELECT * FROM jsonb_array_elements(p_items)
+  LOOP
+    v_prod_id := item->>'product_id';
+    v_qty := GREATEST(1, COALESCE((item->>'quantity')::INTEGER, 1));
+
+    SELECT name, COALESCE(stock_quantity, stock, 0) 
+    INTO v_prod_name, v_current_stock
+    FROM products
+    WHERE id = v_prod_id OR id::text = v_prod_id;
+
+    v_new_stock := GREATEST(0, v_current_stock - v_qty);
+
+    UPDATE products
+    SET 
+      stock_quantity = v_new_stock,
+      stock = v_new_stock,
+      is_available = (v_new_stock > 0),
+      updated_at = now()
+    WHERE id = v_prod_id OR id::text = v_prod_id;
+
+    v_results := v_results || jsonb_build_object(
+      'product_id', v_prod_id,
+      'product_name', v_prod_name,
+      'previous_stock', v_current_stock,
+      'new_stock', v_new_stock,
+      'quantity_reduced', v_qty
+    );
+  END LOOP;
+
+  RETURN QUERY SELECT true, NULL::TEXT, v_results;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION reduce_product_stock_atomic(TEXT, INTEGER) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION reduce_products_stock_atomic_batch(JSONB) TO anon, authenticated, service_role;

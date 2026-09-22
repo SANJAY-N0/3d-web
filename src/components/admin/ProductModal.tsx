@@ -39,6 +39,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     gallery_images: [] as string[],
     gallery_public_ids: [] as string[],
     model_type: 'mesh_stand' as any,
+    stock_quantity: 50,
+    online_available: true,
+    on_spot_available: true,
     is_available: true,
     is_featured: false,
   });
@@ -51,6 +54,10 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       const gallery = initialProduct.gallery_images && initialProduct.gallery_images.length > 0
         ? initialProduct.gallery_images
         : (initialProduct.gallery_urls || []);
+
+      const stockQty = initialProduct.stock_quantity !== undefined && initialProduct.stock_quantity !== null
+        ? initialProduct.stock_quantity
+        : (initialProduct.stock !== undefined ? initialProduct.stock : 50);
 
       setFormData({
         name: initialProduct.name,
@@ -69,6 +76,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
         gallery_images: gallery,
         gallery_public_ids: initialProduct.gallery_public_ids || [],
         model_type: initialProduct.model_type || 'mesh_stand',
+        stock_quantity: stockQty,
+        online_available: initialProduct.online_available !== undefined ? initialProduct.online_available : true,
+        on_spot_available: initialProduct.on_spot_available !== undefined ? initialProduct.on_spot_available : true,
         is_available: initialProduct.is_available,
         is_featured: initialProduct.is_featured,
       });
@@ -90,6 +100,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
         gallery_images: [],
         gallery_public_ids: [],
         model_type: 'mesh_planter',
+        stock_quantity: 50,
+        online_available: true,
+        on_spot_available: true,
         is_available: true,
         is_featured: false,
       });
@@ -236,26 +249,38 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             />
           </div>
 
-          {/* Row 2: Price, Category, Material */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Row 2: Price, Stock, Category, Material */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div className="space-y-1">
-              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Price (₹ INR) *</label>
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium text-xs">Price (₹ INR) *</label>
               <input
                 type="number"
                 required
                 min={1}
                 value={formData.price}
                 onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white font-mono focus:outline-none focus:border-cyan-500"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white font-mono focus:outline-none focus:border-cyan-500 text-xs"
               />
             </div>
 
             <div className="space-y-1">
-              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Category *</label>
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium text-xs">Stock Quantity *</label>
+              <input
+                type="number"
+                required
+                min={0}
+                value={formData.stock_quantity}
+                onChange={(e) => setFormData({ ...formData, stock_quantity: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white font-mono focus:outline-none focus:border-cyan-500 text-xs font-bold"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium text-xs">Category *</label>
               <select
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value as ProductCategory })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500 text-xs"
               >
                 {CATEGORIES.filter((c) => c !== 'All').map((c) => (
                   <option key={c} value={c}>
@@ -266,13 +291,13 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium">Material</label>
+              <label className="font-mono text-slate-700 dark:text-neutral-300 font-medium text-xs">Material</label>
               <input
                 type="text"
                 value={formData.material}
                 onChange={(e) => setFormData({ ...formData, material: e.target.value })}
-                placeholder="e.g. PLA, PETG, ABS, Resin"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500"
+                placeholder="e.g. PLA, Resin"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:border-cyan-500 text-xs"
               />
             </div>
           </div>
@@ -393,27 +418,70 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
           </div>
 
-          {/* Availability & Featured Toggles */}
-          <div className="pt-2 flex flex-wrap gap-6 border-t border-slate-200 dark:border-neutral-800">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.is_available}
-                onChange={(e) => setFormData({ ...formData, is_available: e.target.checked })}
-                className="w-4 h-4 rounded bg-slate-100 dark:bg-neutral-950 border-slate-300 dark:border-neutral-700 text-cyan-500 focus:ring-0"
-              />
-              <span className="text-slate-800 dark:text-neutral-200 font-medium">In Stock / Available for Order</span>
-            </label>
+          {/* Sales Channel Availability & Featured Toggles */}
+          <div className="pt-2 space-y-3 border-t border-slate-200 dark:border-neutral-800">
+            <div className="space-y-1.5">
+              <label className="font-mono text-slate-700 dark:text-neutral-300 uppercase font-semibold text-xs block">
+                Sales Channel Availability
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 dark:bg-neutral-950/60 border border-slate-200 dark:border-neutral-800">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.online_available}
+                    onChange={(e) => setFormData({ ...formData, online_available: e.target.checked })}
+                    className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500"
+                  />
+                  <div>
+                    <span className="text-slate-800 dark:text-neutral-200 font-semibold text-xs block">
+                      Available Online
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-neutral-400 block">
+                      Show in customer web store & online checkout
+                    </span>
+                  </div>
+                </label>
 
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.is_featured}
-                onChange={(e) => setFormData({ ...formData, is_featured: e.target.checked })}
-                className="w-4 h-4 rounded bg-slate-100 dark:bg-neutral-950 border-slate-300 dark:border-neutral-700 text-amber-500 focus:ring-0"
-              />
-              <span className="text-slate-800 dark:text-neutral-200 font-medium">Feature on Homepage</span>
-            </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.on_spot_available}
+                    onChange={(e) => setFormData({ ...formData, on_spot_available: e.target.checked })}
+                    className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500"
+                  />
+                  <div>
+                    <span className="text-slate-800 dark:text-neutral-200 font-semibold text-xs block">
+                      Available On-Spot (POS)
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-neutral-400 block">
+                      Show in Admin POS counter billing catalog
+                    </span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-6 pt-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.is_available}
+                  onChange={(e) => setFormData({ ...formData, is_available: e.target.checked })}
+                  className="w-4 h-4 rounded bg-slate-100 dark:bg-neutral-950 border-slate-300 dark:border-neutral-700 text-cyan-500 focus:ring-0"
+                />
+                <span className="text-slate-800 dark:text-neutral-200 font-medium text-xs">Active / Available for Order</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.is_featured}
+                  onChange={(e) => setFormData({ ...formData, is_featured: e.target.checked })}
+                  className="w-4 h-4 rounded bg-slate-100 dark:bg-neutral-950 border-slate-300 dark:border-neutral-700 text-amber-500 focus:ring-0"
+                />
+                <span className="text-slate-800 dark:text-neutral-200 font-medium text-xs">Feature on Homepage</span>
+              </label>
+            </div>
           </div>
 
           {/* Footer Submit */}

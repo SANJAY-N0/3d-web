@@ -87,6 +87,7 @@ export const OrderPage: React.FC = () => {
   const [customText, setCustomText] = useState('');
   const [selectedColor, setSelectedColor] = useState(initialColor);
   const [specialInstructions, setSpecialInstructions] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'CASH'>('ONLINE');
 
   // Customer form fields initialized directly
   const [customerForm, setCustomerForm] = useState<CustomerFormData>(() => ({
@@ -359,9 +360,8 @@ export const OrderPage: React.FC = () => {
         total_amount: totalAmount,
         customization: customizationData,
         product,
+        payment_method: paymentMethod,
       });
-
-      showToast('Order registered! Redirecting to UPI payment...', 'success');
 
       // Store the active order ID in sessionStorage and localStorage for safe browser reload
       if (typeof window !== 'undefined') {
@@ -373,17 +373,29 @@ export const OrderPage: React.FC = () => {
         }
       }
 
-      // 7. Navigate directly to UPI Payment page with the real database record
-      navigate(`/payment/${newOrder.id}`, {
-        state: {
-          orderId: newOrder.id,
-          orderNumber: newOrder.order_number,
-          totalAmount: newOrder.total_amount,
-          product,
-          customer: newOrder.customer || customerPayload,
-          customization: customizationData,
-        },
-      });
+      if (paymentMethod === 'CASH') {
+        showToast('Cash order placed successfully! Live status updated.', 'success');
+        navigate(`/track?order=${newOrder.order_number}`, {
+          state: {
+            orderId: newOrder.id,
+            orderNumber: newOrder.order_number,
+            order: newOrder,
+          },
+        });
+      } else {
+        showToast('Order registered! Redirecting to UPI payment...', 'success');
+        // 7. Navigate directly to UPI Payment page with the real database record
+        navigate(`/payment/${newOrder.id}`, {
+          state: {
+            orderId: newOrder.id,
+            orderNumber: newOrder.order_number,
+            totalAmount: newOrder.total_amount,
+            product,
+            customer: newOrder.customer || customerPayload,
+            customization: customizationData,
+          },
+        });
+      }
     } catch (err: any) {
       console.error('Order creation error:', err);
       showToast(err.message || 'Failed to create order. Please try again.', 'error');
@@ -766,7 +778,7 @@ export const OrderPage: React.FC = () => {
                               ...prev,
                               department_id: foundDept.id,
                               department: `${foundDept.name} (${foundDept.code})`,
-                              year: deptYears.includes(prev.year) ? prev.year : deptYears[0],
+                              year: prev.year && deptYears.includes(prev.year) ? prev.year : deptYears[0],
                             }));
                           } else {
                             handleFieldChange('department', selectedVal);
@@ -1001,6 +1013,67 @@ export const OrderPage: React.FC = () => {
           )}
         </div>
 
+        {/* Section 3.5: Payment Method Selection */}
+        <div className="bg-white dark:bg-neutral-900/90 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 sm:p-7 space-y-4 shadow-sm dark:shadow-xl">
+          <div className="flex items-center gap-2 text-cyan-600 dark:text-cyan-400 font-mono text-xs font-semibold uppercase tracking-wider">
+            <span>Payment Method</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('ONLINE')}
+              className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                paymentMethod === 'ONLINE'
+                  ? 'border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/30 text-slate-900 dark:text-white shadow-md'
+                  : 'border-slate-200 dark:border-neutral-800 bg-slate-50 dark:bg-neutral-950/60 text-slate-600 dark:text-neutral-400 hover:border-slate-300 dark:hover:border-neutral-700'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl">💳</span>
+                  <div>
+                    <span className="font-semibold text-xs text-slate-900 dark:text-white block">Online Payment (UPI)</span>
+                    <span className="text-[11px] text-slate-500 dark:text-neutral-400">GPay, PhonePe, Paytm, QR scan</span>
+                  </div>
+                </div>
+                {paymentMethod === 'ONLINE' && (
+                  <CheckCircle2 className="w-5 h-5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                )}
+              </div>
+              <span className="inline-block self-start px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 text-[10px] font-mono font-medium">
+                Instant Verification
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('CASH')}
+              className={`p-4 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                paymentMethod === 'CASH'
+                  ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30 text-slate-900 dark:text-white shadow-md'
+                  : 'border-slate-200 dark:border-neutral-800 bg-slate-50 dark:bg-neutral-950/60 text-slate-600 dark:text-neutral-400 hover:border-slate-300 dark:hover:border-neutral-700'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl">💵</span>
+                  <div>
+                    <span className="font-semibold text-xs text-slate-900 dark:text-white block">Cash on Delivery / Pickup</span>
+                    <span className="text-[11px] text-slate-500 dark:text-neutral-400">Pay cash upon receiving order</span>
+                  </div>
+                </div>
+                {paymentMethod === 'CASH' && (
+                  <CheckCircle2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                )}
+              </div>
+              <span className="inline-block self-start px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-mono font-medium">
+                Cash Pending Verification
+              </span>
+            </button>
+          </div>
+        </div>
+
         {/* Section 4: Live Order Summary & Continue CTA */}
         <div className="bg-white dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-md dark:shadow-2xl">
           <div className="space-y-1 text-center sm:text-left">
@@ -1027,7 +1100,7 @@ export const OrderPage: React.FC = () => {
               </>
             ) : (
               <>
-                <span>Proceed to UPI Payment</span>
+                <span>{paymentMethod === 'CASH' ? 'Place Order (Cash on Delivery)' : 'Proceed to UPI Payment'}</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}

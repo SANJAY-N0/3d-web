@@ -1,7 +1,8 @@
-import { Order, OrderStatus, AdminStats } from '../types';
+import { Order, OrderStatus, AdminStats, PaymentMethod, PosBillRequest, PosBillResponse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateOrderNumber } from '../lib/upiUtils';
 import { productService } from './productService';
+import { authService } from './authService';
 
 const FAKE_ORDER_NUMBERS = new Set(['3DP-2026-00124', '3DP-2026-00125', '3DP-2026-00126']);
 
@@ -14,9 +15,36 @@ function isFakeOrder(o: any): boolean {
 }
 
 function normalizeOrder(o: any): Order {
+  if (!o) return o;
+  const payment = Array.isArray(o.payment) ? o.payment[0] || null : o.payment;
+  const cust = o.customization || {};
+  let items = Array.isArray(o.order_items) && o.order_items.length > 0 ? o.order_items : (cust.items || []);
+  if (items.length === 0 && (o.product || o.product_id)) {
+    items = [
+      {
+        id: `legacy-${o.id}`,
+        order_id: o.id,
+        product_id: o.product_id,
+        product_name: o.product?.name || "3D Printed Model",
+        quantity: o.quantity || 1,
+        unit_price: o.unit_price || o.product?.price || 0,
+        total_price: o.total_amount || 0,
+        customization: o.customization || {},
+        created_at: o.created_at,
+      },
+    ];
+  }
   return {
     ...o,
-    payment: Array.isArray(o.payment) ? o.payment[0] || null : o.payment,
+    customer_name: o.customer_name || cust.customer_name || o.customer?.name || "Walk-in Customer",
+    customer_mobile: o.customer_mobile || cust.customer_mobile || o.customer?.phone || "",
+    customer_email: o.customer_email || cust.customer_email || o.customer?.email || "",
+    payment_method: o.payment_method || cust.payment_method || (payment?.payment_method) || (cust.is_pos_bill ? "CASH" : "ONLINE"),
+    payment_status: o.payment_status || cust.payment_status || (payment?.payment_status) || "COMPLETED",
+    subtotal: o.subtotal || cust.subtotal || o.total_amount,
+    payment,
+    order_items: items,
+    items,
   };
 }
 
@@ -148,6 +176,7 @@ export const orderService = {
     total_amount?: number;
     customization?: Order['customization'];
     product?: Order['product'];
+    payment_method?: PaymentMethod;
   }): Promise<Order> {
     return this.createOrder(orderPayload);
   },
@@ -161,7 +190,10 @@ export const orderService = {
     total_amount?: number;
     customization?: Order['customization'];
     product?: Order['product'];
+    payment_method?: PaymentMethod;
   }): Promise<Order> {
+    const paymentMethod = orderPayload.payment_method || 'ONLINE';
+
     // 1. Call dedicated backend API endpoint /api/orders/create
     try {
       const res = await fetch('/api/orders/create', {
@@ -173,6 +205,7 @@ export const orderService = {
           product_id: orderPayload.product_id,
           quantity: orderPayload.quantity,
           customization: orderPayload.customization,
+          payment_method: paymentMethod,
         }),
       });
 
@@ -191,18 +224,25 @@ export const orderService = {
         const sessionCreatedAt = new Date().toISOString();
         const sessionExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
         const validatedTotal = Number(orderPayload.unit_price || 0) * Number(orderPayload.quantity || 1);
+        const initialPaymentStatus = paymentMethod === 'CASH' ? 'CASH_PENDING' : 'PENDING';
 
         const { data: dbOrder, error: dbError } = await supabase
           .from('orders')
           .insert([{
             order_number: orderNumber,
             customer_id: orderPayload.customer_id,
+            customer_name: orderPayload.customer?.name || 'Customer',
+            customer_mobile: orderPayload.customer?.phone || '',
+            customer_email: orderPayload.customer?.email || null,
             product_id: orderPayload.product_id,
             quantity: orderPayload.quantity,
             unit_price: orderPayload.unit_price,
+            subtotal: validatedTotal,
             total_amount: validatedTotal,
             customization: orderPayload.customization,
-            order_status: 'PENDING_PAYMENT',
+            payment_method: paymentMethod,
+            payment_status: initialPaymentStatus,
+            order_status: 'PENDING',
             payment_session_created_at: sessionCreatedAt,
             payment_session_expires_at: sessionExpiresAt,
           }])
@@ -219,12 +259,29 @@ export const orderService = {
         }
 
         if (dbOrder) {
+          // Insert order_items snapshot if table exists
+          try {
+            await supabase.from('order_items').insert([{
+              order_id: dbOrder.id,
+              product_id: orderPayload.product_id,
+              product_name: orderPayload.product?.name || '3D Printed Model',
+              quantity: orderPayload.quantity,
+              unit_price: orderPayload.unit_price || 0,
+              total_price: validatedTotal,
+              customization: orderPayload.customization || {},
+            }]).maybeSingle();
+          } catch (itemErr) {
+            console.warn('Notice: order_items insert skipped or table absent:', itemErr);
+          }
+
           const { data: dbPayment } = await supabase
             .from('payments')
             .insert([{
               order_id: dbOrder.id,
               amount: validatedTotal,
-              payment_status: 'PENDING',
+              payment_method: paymentMethod,
+              payment_status: initialPaymentStatus,
+              payment_gateway: paymentMethod === 'CASH' ? 'CASH' : 'UPI',
             }])
             .select()
             .single();
@@ -239,6 +296,177 @@ export const orderService = {
       // Do NOT mask database failure by returning fake local orders!
       throw err;
     }
+  },
+
+  /**
+   * Fetch live orders for admin live orders screen
+   */
+  async getLiveOrders(filters?: { status?: string; search?: string }): Promise<{ orders: Order[]; stats: any }> {
+    const statusParam = filters?.status || 'all';
+    const searchParam = filters?.search || '';
+    const token = await authService.getAdminToken();
+
+    try {
+      const url = `/api/admin/orders/live?status=${encodeURIComponent(statusParam)}&search=${encodeURIComponent(searchParam)}`;
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(url, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.orders)) {
+          return {
+            orders: data.orders.map(normalizeOrder),
+            stats: data.stats || {},
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Backend getLiveOrders failed, falling back to direct Supabase:', err);
+    }
+
+    // Direct Supabase fallback
+    const all = await this.getAll();
+    const stats = {
+      pendingOrders: all.filter((o) => ['PENDING', 'ORDER_PLACED', 'PAYMENT_PROCESSING', 'PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION'].includes(o.order_status)).length,
+      confirmedOrders: all.filter((o) => ['CONFIRMED', 'PAYMENT_CONFIRMED', 'ORDER_PROCESSING', 'PRINTING', 'READY', 'READY_FOR_PICKUP'].includes(o.order_status)).length,
+      cashPending: all.filter((o) => o.payment_method === 'CASH' && (o.payment_status === 'CASH_PENDING' || o.payment?.payment_status === 'CASH_PENDING' || o.payment_status === 'PENDING')).length,
+      onlinePaid: all.filter((o) => (o.payment_method === 'ONLINE' || !o.payment_method) && (o.payment_status === 'PAID' || o.payment?.payment_status === 'PAID' || o.payment_status === 'VERIFIED' || o.order_status === 'PAYMENT_CONFIRMED' || o.order_status === 'PAYMENT_VERIFIED')).length,
+      totalLiveOrders: all.length,
+    };
+
+    let filtered = all;
+    if (statusParam === 'pending') {
+      filtered = filtered.filter((o) => ['PENDING', 'ORDER_PLACED', 'PAYMENT_PROCESSING', 'PENDING_PAYMENT', 'PENDING_PAYMENT_VERIFICATION'].includes(o.order_status));
+    } else if (statusParam === 'confirmed') {
+      filtered = filtered.filter((o) => ['CONFIRMED', 'PAYMENT_CONFIRMED', 'ORDER_PROCESSING', 'PRINTING', 'READY', 'READY_FOR_PICKUP'].includes(o.order_status));
+    } else if (statusParam === 'cash') {
+      filtered = filtered.filter((o) => o.payment_method === 'CASH');
+    } else if (statusParam === 'online') {
+      filtered = filtered.filter((o) => o.payment_method === 'ONLINE' || !o.payment_method);
+    } else if (statusParam === 'today') {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      filtered = filtered.filter((o) => new Date(o.created_at).getTime() >= startOfToday.getTime());
+    }
+
+    if (searchParam.trim()) {
+      const q = searchParam.toLowerCase();
+      filtered = filtered.filter((o) => {
+        const matchNum = o.order_number?.toLowerCase().includes(q);
+        const matchName = (o.customer_name || o.customer?.name || '').toLowerCase().includes(q);
+        const matchPhone = (o.customer_mobile || o.customer?.phone || '').toLowerCase().includes(q);
+        const matchTx = (o.payment?.transaction_id || '').toLowerCase().includes(q);
+        const matchProd = (o.product?.name || '').toLowerCase().includes(q) ||
+          (o.order_items || []).some((item) => item.product_name?.toLowerCase().includes(q));
+        return matchNum || matchName || matchPhone || matchTx || matchProd;
+      });
+    }
+
+    return { orders: filtered, stats };
+  },
+
+  /**
+   * Confirm order via Admin API
+   */
+  async confirmOrder(orderId: string): Promise<Order> {
+    const token = await authService.getAdminToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/confirm`, {
+      method: 'POST',
+      headers,
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success && data.order) {
+      return normalizeOrder(data.order);
+    }
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to confirm order.');
+    }
+
+    return this.updateStatus(orderId, 'CONFIRMED');
+  },
+
+  /**
+   * Cancel order via Admin API
+   */
+  async cancelOrder(orderId: string, reason?: string): Promise<Order> {
+    const token = await authService.getAdminToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ reason }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success && data.order) {
+      return normalizeOrder(data.order);
+    }
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to cancel order.');
+    }
+
+    return this.updateStatus(orderId, 'CANCELLED');
+  },
+
+  /**
+   * Mark cash payment received via Admin API
+   */
+  async markCashReceived(orderId: string, notes?: string): Promise<{ order: Order; payment: any }> {
+    const token = await authService.getAdminToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/payment/cash-received`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ notes }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success && data.order) {
+      return {
+        order: normalizeOrder(data.order),
+        payment: data.payment,
+      };
+    }
+
+    throw new Error(data.error || 'Failed to mark cash as received.');
+  },
+
+  /**
+   * Verify online payment via Admin API
+   */
+  async verifyPaymentAdmin(orderId: string, transactionId?: string, notes?: string): Promise<{ order: Order; payment: any }> {
+    const token = await authService.getAdminToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/payment/verify`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ transactionId, notes }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success && data.order) {
+      return {
+        order: normalizeOrder(data.order),
+        payment: data.payment,
+      };
+    }
+
+    throw new Error(data.error || 'Failed to verify payment.');
   },
 
   async updateStatus(orderId: string, status: OrderStatus): Promise<Order> {
@@ -439,5 +667,61 @@ export const orderService = {
     }
 
     return [];
-  }
+  },
+
+  /**
+   * Create POS bill from admin counter
+   */
+  async createPosBill(billData: PosBillRequest): Promise<PosBillResponse> {
+    const token = await authService.getAdminToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch('/api/admin/pos/create-bill', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(billData),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to create POS bill.');
+    }
+
+    return {
+      ...data,
+      order: normalizeOrder(data.order),
+    };
+  },
+
+  /**
+   * Fetch recent POS bills
+   */
+  async getPosBills(): Promise<Order[]> {
+    const token = await authService.getAdminToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      const res = await fetch('/api/admin/pos/bills', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.bills)) {
+          return data.bills.map(normalizeOrder);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch POS bills from API, falling back to local query:', err);
+    }
+
+    // Fallback: fetch all orders and filter
+    const all = await this.getAll();
+    return all.filter((o) => (o.customization as any)?.is_pos_bill || o.order_number.startsWith('POS-'));
+  },
 };

@@ -17,6 +17,8 @@ import {
   Moon,
   Sliders,
   GraduationCap,
+  Radio,
+  Receipt,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useToast } from '../common/Toast';
@@ -84,7 +86,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
   const navItems = [
     { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-    { label: 'Orders & Payments', path: '/admin/orders', icon: ShoppingBag },
+    { label: 'POS Billing Counter', path: '/admin/pos', icon: Receipt, posBadge: true },
+    { label: 'Live Orders', path: '/admin/live-orders', icon: Radio, liveBadge: true },
+    { label: 'All Orders & History', path: '/admin/orders', icon: ShoppingBag },
     { label: 'Product Catalog', path: '/admin/products', icon: Box },
     { label: 'Homepage Showcase', path: '/admin/showcase', icon: Sliders },
     { label: 'Academic Management', path: '/admin/departments', icon: GraduationCap },
@@ -143,14 +147,27 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
+                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
                     active
                       ? 'bg-cyan-50 dark:bg-gradient-to-r dark:from-cyan-500/20 dark:to-indigo-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/30 shadow-sm'
                       : 'text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-neutral-800/60'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${active ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400 dark:text-neutral-500'}`} />
-                  <span>{item.label}</span>
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 ${active ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400 dark:text-neutral-500'}`} />
+                    <span>{item.label}</span>
+                  </div>
+                  {(item as any).liveBadge && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 text-[9px] font-mono font-bold border border-emerald-300 dark:border-emerald-700/50">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      LIVE
+                    </span>
+                  )}
+                  {(item as any).posBadge && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 text-[9px] font-mono font-bold border border-cyan-300 dark:border-cyan-700/50">
+                      POS
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -280,12 +297,25 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
               key={item.path}
               to={item.path}
               onClick={() => setMobileMenuOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold ${
+              className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold ${
                 isActive(item.path) ? 'bg-cyan-50 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300' : 'text-slate-600 dark:text-neutral-400'
               }`}
             >
-              <item.icon className="w-4 h-4" />
-              <span>{item.label}</span>
+              <div className="flex items-center gap-3">
+                <item.icon className="w-4 h-4" />
+                <span>{item.label}</span>
+              </div>
+              {(item as any).liveBadge && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 text-[9px] font-mono font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  LIVE
+                </span>
+              )}
+              {(item as any).posBadge && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 text-[9px] font-mono font-bold">
+                  POS
+                </span>
+              )}
             </Link>
           ))}
           <div className="pt-2 border-t border-slate-200 dark:border-neutral-800 flex justify-between items-center">
@@ -304,7 +334,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         - Expands workspace when in fullscreen mode
         =============================================================================
       */}
-      <div className="flex-1 flex flex-col min-h-screen w-full md:ml-[250px] overflow-x-hidden">
+      <div
+        className={`flex-1 flex flex-col w-full md:ml-[250px] overflow-x-hidden ${
+          location.pathname === '/admin/pos' ? 'h-screen overflow-hidden' : 'min-h-screen'
+        }`}
+      >
         {/* Desktop Top Header Bar with Fullscreen Toggle */}
         <div className="hidden md:flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-neutral-800/80 bg-white/80 dark:bg-neutral-900/40 backdrop-blur-md sticky top-0 z-20">
           <div className="flex items-center gap-2.5 text-xs font-mono text-slate-500 dark:text-neutral-400">
@@ -359,7 +393,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
         {/* Main Content Area */}
         <main
-          className="flex-1 transition-all duration-300 w-full p-4 sm:p-6 lg:p-8 max-w-full"
+          className={`flex-1 transition-all duration-300 w-full max-w-full ${
+            location.pathname === '/admin/pos'
+              ? 'p-2 sm:p-3 overflow-hidden flex flex-col h-[calc(100vh-49px)]'
+              : 'p-4 sm:p-6 lg:p-8'
+          }`}
         >
           {children}
         </main>

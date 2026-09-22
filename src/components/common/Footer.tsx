@@ -1,9 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Sparkles, Shield, QrCode, Cpu, Layers } from 'lucide-react';
-import { getSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
+import { useSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
 
 export const Footer: React.FC = () => {
+  const support = useSupportConfig();
   return (
     <footer className="border-t border-slate-200 dark:border-neutral-800/80 bg-white dark:bg-neutral-950 text-slate-600 dark:text-neutral-400 text-sm transition-colors duration-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
@@ -23,29 +24,29 @@ export const Footer: React.FC = () => {
             </p>
             <div className="flex items-center gap-3 pt-2 text-xs font-mono text-cyan-600 dark:text-cyan-400/80">
               <span className="flex items-center gap-1.5 bg-slate-100 dark:bg-neutral-900 px-3 py-1 rounded-md border border-slate-200 dark:border-neutral-800 text-slate-700 dark:text-neutral-300">
-                <QrCode className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Direct UPI Ordering
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Made for KPR Students
               </span>
               <span className="flex items-center gap-1.5 bg-slate-100 dark:bg-neutral-900 px-3 py-1 rounded-md border border-slate-200 dark:border-neutral-800 text-slate-700 dark:text-neutral-300">
-                <Cpu className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> 0.08 - 0.2mm Precision
+                <Shield className="w-3.5 h-3.5 text-emerald-500" /> Instant UPI Checkout
               </span>
             </div>
           </div>
 
           {/* Quick Links */}
           <div className="space-y-3">
-            <h4 className="font-display font-semibold text-slate-900 dark:text-white text-sm tracking-wider uppercase">Navigation</h4>
+            <h4 className="font-display font-semibold text-slate-900 dark:text-white text-sm tracking-wider uppercase">Quick Links</h4>
             <ul className="space-y-2 text-xs">
               <li>
-                <Link to="/" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">Home</Link>
+                <Link to="/" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">Catalog / Store</Link>
               </li>
               <li>
-                <Link to="/products" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">Product Catalog</Link>
+                <Link to="/track" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">Track Your Order</Link>
               </li>
               <li>
-                <Link to="/track" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">Track Order Status</Link>
+                <Link to="/about" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">About & Material Specs</Link>
               </li>
               <li>
-                <Link to="/about" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">Materials & Tech Specs</Link>
+                <Link to="/admin/login" className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">Admin Console</Link>
               </li>
             </ul>
           </div>
@@ -55,14 +56,14 @@ export const Footer: React.FC = () => {
             <h4 className="font-display font-semibold text-slate-900 dark:text-white text-sm tracking-wider uppercase">Support & Contact</h4>
             <ul className="space-y-2 text-xs">
               <li>
-                <span className="text-slate-600 dark:text-neutral-400 block">📞 Call: <a href={`tel:${getSupportConfig().phone.replace(/\s+/g, '')}`} className="text-slate-900 dark:text-white hover:text-cyan-600 dark:hover:text-cyan-400 font-mono transition-colors">{getSupportConfig().phone}</a></span>
+                <span className="text-slate-600 dark:text-neutral-400 block">📞 Call: <a href={`tel:${(support.phone || '').replace(/\s+/g, '')}`} className="text-slate-900 dark:text-white hover:text-cyan-600 dark:hover:text-cyan-400 font-mono transition-colors">{support.phone}</a></span>
               </li>
               <li>
-                <span className="text-slate-600 dark:text-neutral-400 block">💬 WhatsApp: <a href={getWhatsAppLink(getSupportConfig().whatsapp)} target="_blank" rel="noopener noreferrer" className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 font-mono transition-colors">{getSupportConfig().whatsapp}</a></span>
+                <span className="text-slate-600 dark:text-neutral-400 block">💬 WhatsApp: <a href={getWhatsAppLink(support.whatsapp)} target="_blank" rel="noopener noreferrer" className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 font-mono transition-colors">{support.whatsapp}</a></span>
               </li>
-              {getSupportConfig().altPhone && (
+              {support.altPhone && (
                 <li>
-                  <span className="text-slate-600 dark:text-neutral-400 block">📞 Alternative: <a href={`tel:${getSupportConfig().altPhone!.replace(/\s+/g, '')}`} className="text-slate-900 dark:text-white hover:text-cyan-600 dark:hover:text-cyan-400 font-mono transition-colors">{getSupportConfig().altPhone}</a></span>
+                  <span className="text-slate-600 dark:text-neutral-400 block">📞 Alternative: <a href={`tel:${(support.altPhone || '').replace(/\s+/g, '')}`} className="text-slate-900 dark:text-white hover:text-cyan-600 dark:hover:text-cyan-400 font-mono transition-colors">{support.altPhone}</a></span>
                 </li>
               )}
               <li className="pt-1">

@@ -6,6 +6,12 @@ import { AdminStats, Order, Product } from '../../types';
 export const adminService = {
   getStats: (): Promise<AdminStats> => orderService.getAdminStats(),
   getOrders: (): Promise<Order[]> => orderService.getAll(),
+  getLiveOrders: (filters?: { status?: string; search?: string }) => orderService.getLiveOrders(filters),
+  confirmOrder: (orderId: string) => orderService.confirmOrder(orderId),
+  cancelOrder: (orderId: string, reason?: string) => orderService.cancelOrder(orderId, reason),
+  markCashReceived: (orderId: string, notes?: string) => orderService.markCashReceived(orderId, notes),
+  verifyPaymentAdmin: (orderId: string, transactionId?: string, notes?: string) =>
+    orderService.verifyPaymentAdmin(orderId, transactionId, notes),
   updateOrderStatus: (orderId: string, status: any) => orderService.updateStatus(orderId, status),
   getProducts: (): Promise<Product[]> => productService.getAll(),
   createProduct: (data: any) => productService.create(data),

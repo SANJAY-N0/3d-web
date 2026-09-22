@@ -20,11 +20,13 @@ const CustomerDashboard = lazy(() => import('../pages/CustomerDashboard').then((
 // Lazy-loaded Admin Pages
 const AdminLogin = lazy(() => import('../pages/admin/AdminLogin').then((m) => ({ default: m.AdminLogin })));
 const AdminDashboard = lazy(() => import('../pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
+const AdminLiveOrders = lazy(() => import('../pages/admin/AdminLiveOrders').then((m) => ({ default: m.AdminLiveOrders })));
 const AdminOrders = lazy(() => import('../pages/admin/AdminOrders').then((m) => ({ default: m.AdminOrders })));
 const AdminProducts = lazy(() => import('../pages/admin/AdminProducts').then((m) => ({ default: m.AdminProducts })));
 const AdminShowcase = lazy(() => import('../pages/admin/AdminShowcase').then((m) => ({ default: m.AdminShowcase })));
 const AdminDepartments = lazy(() => import('../pages/admin/AdminDepartments').then((m) => ({ default: m.AdminDepartments })));
 const AdminSettings = lazy(() => import('../pages/admin/AdminSettings').then((m) => ({ default: m.AdminSettings })));
+const AdminPOS = lazy(() => import('../pages/admin/AdminPOS').then((m) => ({ default: m.AdminPOS })));
 import { AdminProtectedRoute } from '../components/admin/AdminProtectedRoute';
 
 const PageLoadingFallback: React.FC = () => (
@@ -79,6 +81,26 @@ export const AppRouter: React.FC = () => {
                   <AdminDashboard />
                 </AdminProtectedRoute>
               }
+            />
+            <Route
+              path="/admin/live-orders"
+              element={
+                <AdminProtectedRoute>
+                  <AdminLiveOrders />
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/pos"
+              element={
+                <AdminProtectedRoute>
+                  <AdminPOS />
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/billing"
+              element={<Navigate to="/admin/pos" replace />}
             />
             <Route
               path="/admin/orders"

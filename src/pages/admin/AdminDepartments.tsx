@@ -273,7 +273,7 @@ export const AdminDepartments: React.FC = () => {
   const handleToggleEditYear = (yr: string) => {
     if (editYears.includes(yr)) {
       if (editYears.length === 1) {
-        showToast('Department must have at least one active year.', 'warning');
+        showToast('Department must have at least one active year.', 'error');
         return;
       }
       setEditYears(editYears.filter((y) => y !== yr));

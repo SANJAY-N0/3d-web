@@ -6,6 +6,7 @@ import { ProductCard } from '../components/product/ProductCard';
 import { CategoryFilter } from '../components/product/CategoryFilter';
 import { ProductCardSkeleton } from '../components/common/Skeleton';
 import { Box, FilterX } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export const Products: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -24,6 +25,29 @@ export const Products: React.FC = () => {
       .getAll()
       .then((data) => setProducts(data))
       .finally(() => setLoading(false));
+
+    // Subscribe to realtime product stock updates
+    if (!isSupabaseConfigured || !supabase) return;
+
+    const channel = supabase
+      .channel('products-page-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'products' },
+        (payload) => {
+          const updatedProd = payload.new as Product;
+          if (updatedProd && updatedProd.id) {
+            setProducts((prev) =>
+              prev.map((p) => (p.id === updatedProd.id ? { ...p, ...updatedProd } : p))
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleCategorySelect = (category: string) => {
@@ -39,6 +63,10 @@ export const Products: React.FC = () => {
   const filteredProducts = useMemo(() => {
     return products
       .filter((p) => {
+        // Channel availability: only online available products in customer store
+        if (p.online_available === false) return false;
+        if (p.status === 'INACTIVE') return false;
+
         // Category filter
         if (selectedCategory !== 'All' && p.category !== selectedCategory) {
           return false;
@@ -52,7 +80,13 @@ export const Products: React.FC = () => {
           if (!matchName && !matchDesc && !matchCat) return false;
         }
         // In stock only
-        if (inStockOnly && !p.is_available) {
+        const stock =
+          p.stock_quantity !== undefined && p.stock_quantity !== null
+            ? Number(p.stock_quantity)
+            : p.stock !== undefined
+            ? Number(p.stock)
+            : (p.is_available ? 50 : 0);
+        if (inStockOnly && (!p.is_available || stock <= 0)) {
           return false;
         }
         return true;

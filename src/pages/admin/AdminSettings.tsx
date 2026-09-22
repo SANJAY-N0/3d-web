@@ -308,6 +308,7 @@ ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Public products are viewable by everyone" ON products FOR SELECT USING (true);
+CREATE POLICY "Allow stock reduction during checkout" ON products FOR UPDATE USING (true) WITH CHECK (true);
 CREATE POLICY "Public can register customer profile" ON customers FOR INSERT WITH CHECK (true);
 CREATE POLICY "Customers view own profile" ON customers FOR SELECT USING ((auth.uid() IS NOT NULL AND auth.uid() = auth_user_id) OR true);
 CREATE POLICY "Customers update own profile" ON customers FOR UPDATE USING ((auth.uid() IS NOT NULL AND auth.uid() = auth_user_id) OR true);
@@ -319,6 +320,45 @@ CREATE POLICY "View payment records" ON payments FOR SELECT USING (true);
 CREATE POLICY "Update payment records" ON payments FOR UPDATE USING (true);
 CREATE POLICY "Public settings are viewable by everyone" ON settings FOR SELECT USING (true);
 CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role() = 'authenticated');
+
+-- 9. ATOMIC PRODUCT STOCK REDUCTION FUNCTIONS
+CREATE OR REPLACE FUNCTION reduce_product_stock_atomic(p_product_id TEXT, p_quantity INTEGER)
+RETURNS TABLE (success BOOLEAN, previous_stock INTEGER, new_stock INTEGER, error_message TEXT) 
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_current_stock INTEGER; v_new_stock INTEGER; v_qty INTEGER;
+BEGIN
+  v_qty := GREATEST(1, COALESCE(p_quantity, 1));
+  SELECT COALESCE(stock_quantity, stock, 0) INTO v_current_stock FROM products WHERE id = p_product_id OR id::text = p_product_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 0, 0, format('Product ID %s not found in catalog', p_product_id)::TEXT; RETURN; END IF;
+  IF v_current_stock < v_qty THEN RETURN QUERY SELECT false, v_current_stock, v_current_stock, format('Insufficient stock. Available: %s, Requested: %s', v_current_stock, v_qty)::TEXT; RETURN; END IF;
+  v_new_stock := GREATEST(0, v_current_stock - v_qty);
+  UPDATE products SET stock_quantity = v_new_stock, stock = v_new_stock, is_available = (v_new_stock > 0), updated_at = now() WHERE id = p_product_id OR id::text = p_product_id;
+  RETURN QUERY SELECT true, v_current_stock, v_new_stock, NULL::TEXT;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION reduce_products_stock_atomic_batch(p_items JSONB)
+RETURNS TABLE (success BOOLEAN, error_message TEXT, updated_items JSONB)
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE item JSONB; v_prod_id TEXT; v_prod_name TEXT; v_qty INTEGER; v_current_stock INTEGER; v_new_stock INTEGER; v_results JSONB := '[]'::JSONB;
+BEGIN
+  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN RETURN QUERY SELECT false, 'Items array cannot be empty'::TEXT, '[]'::JSONB; RETURN; END IF;
+  FOR item IN SELECT * FROM jsonb_array_elements(p_items) ORDER BY (value->>'product_id') ASC LOOP
+    v_prod_id := item->>'product_id'; v_qty := GREATEST(1, COALESCE((item->>'quantity')::INTEGER, 1));
+    SELECT name, COALESCE(stock_quantity, stock, 0) INTO v_prod_name, v_current_stock FROM products WHERE id = v_prod_id OR id::text = v_prod_id FOR UPDATE;
+    IF NOT FOUND THEN RETURN QUERY SELECT false, format('Product "%s" not found in catalog', v_prod_id)::TEXT, '[]'::JSONB; RETURN; END IF;
+    IF v_current_stock < v_qty THEN RETURN QUERY SELECT false, format('Insufficient stock for "%s". Available: %s, Requested: %s', COALESCE(v_prod_name, v_prod_id), v_current_stock, v_qty)::TEXT, '[]'::JSONB; RETURN; END IF;
+  END LOOP;
+  FOR item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
+    v_prod_id := item->>'product_id'; v_qty := GREATEST(1, COALESCE((item->>'quantity')::INTEGER, 1));
+    SELECT name, COALESCE(stock_quantity, stock, 0) INTO v_prod_name, v_current_stock FROM products WHERE id = v_prod_id OR id::text = v_prod_id;
+    v_new_stock := GREATEST(0, v_current_stock - v_qty);
+    UPDATE products SET stock_quantity = v_new_stock, stock = v_new_stock, is_available = (v_new_stock > 0), updated_at = now() WHERE id = v_prod_id OR id::text = v_prod_id;
+    v_results := v_results || jsonb_build_object('product_id', v_prod_id, 'product_name', v_prod_name, 'previous_stock', v_current_stock, 'new_stock', v_new_stock, 'quantity_reduced', v_qty);
+  END LOOP;
+  RETURN QUERY SELECT true, NULL::TEXT, v_results;
+END;
+$$;
 `;
 
   return (
@@ -358,7 +398,7 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
                   required
                   value={supportPhone}
                   onChange={(e) => setSupportPhone(e.target.value)}
-                  placeholder="+91 98765 43210"
+                  placeholder="+91 9894709708"
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-cyan-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                 />
                 <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Primary phone for direct customer calls</span>
@@ -374,7 +414,7 @@ CREATE POLICY "Admins can manage settings" ON settings FOR ALL USING (auth.role(
                   required
                   value={supportWhatsapp}
                   onChange={(e) => setSupportWhatsapp(e.target.value)}
-                  placeholder="+91 98765 43210"
+                  placeholder="+91 8056709708"
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-neutral-800 focus:border-emerald-500 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 />
                 <span className="text-[11px] text-slate-400 dark:text-neutral-500 block">Opens WhatsApp chat link for customers</span>

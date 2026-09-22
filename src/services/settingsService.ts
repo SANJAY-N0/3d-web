@@ -146,6 +146,10 @@ export const settingsService = {
         console.warn(`Supabase save setting '${key}' failed:`, err);
       }
     }
+
+    if (typeof window !== 'undefined' && (key === 'support_whatsapp' || key === 'support_phone' || key === 'support_alt_phone')) {
+      window.dispatchEvent(new CustomEvent('printlab_support_settings_updated'));
+    }
   },
 
   /**

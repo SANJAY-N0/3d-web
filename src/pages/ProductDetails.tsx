@@ -15,12 +15,14 @@ import {
   Share2,
   ShieldCheck,
   CheckCircle2,
+  AlertCircle,
   Layers,
   Sparkles,
   Truck,
   Building2,
 } from 'lucide-react';
 import { useToast } from '../components/common/Toast';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export const ProductDetails: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -54,6 +56,32 @@ export const ProductDetails: React.FC = () => {
         }
       })
       .finally(() => setLoading(false));
+
+    // Subscribe to realtime product stock updates
+    if (!isSupabaseConfigured || !supabase) return;
+
+    const channel = supabase
+      .channel(`product-details-realtime-${slug}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'products' },
+        (payload) => {
+          const updated = payload.new as Product;
+          if (updated) {
+            setProduct((prev) => {
+              if (prev && (prev.id === updated.id || prev.slug === updated.slug)) {
+                return { ...prev, ...updated };
+              }
+              return prev;
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [slug]);
 
   if (loading) {
@@ -124,6 +152,16 @@ export const ProductDetails: React.FC = () => {
   // Compile full gallery images with unique views
   const galleryImages = Array.from(new Set([product.image_url, ...(product.gallery_urls || [])]));
 
+  const stock =
+    (product as any).stock_quantity !== undefined && (product as any).stock_quantity !== null
+      ? Number((product as any).stock_quantity)
+      : (product as any).stock !== undefined
+      ? Number((product as any).stock)
+      : (product.is_available ? 50 : 0);
+
+  const isOutOfStock = stock <= 0 || !product.is_available || product.online_available === false;
+  const isLowStock = !isOutOfStock && stock <= 5;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
       {/* Top Breadcrumb & Share */}
@@ -181,16 +219,22 @@ export const ProductDetails: React.FC = () => {
               <span className="px-2.5 py-1 text-xs font-mono font-medium rounded-lg bg-slate-100 dark:bg-neutral-900 text-cyan-700 dark:text-cyan-300 border border-slate-200 dark:border-neutral-800">
                 {product.category}
               </span>
-              <span
-                className={`px-2.5 py-1 text-xs font-mono rounded-lg border font-semibold flex items-center gap-1 ${
-                  product.is_available
-                    ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30'
-                    : 'bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/30'
-                }`}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {product.is_available ? 'In Stock (Ready to Print)' : 'Out of Stock'}
-              </span>
+              {isOutOfStock ? (
+                <span className="px-2.5 py-1 text-xs font-mono rounded-lg border font-semibold flex items-center gap-1 bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/30">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  Out of Stock
+                </span>
+              ) : isLowStock ? (
+                <span className="px-2.5 py-1 text-xs font-mono rounded-lg border font-semibold flex items-center gap-1 bg-amber-50 dark:bg-amber-950/80 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/30">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  Only {stock} left!
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 text-xs font-mono rounded-lg border font-semibold flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  In Stock ({stock} available)
+                </span>
+              )}
             </div>
 
             <h1 className="font-display font-bold text-2xl sm:text-3xl text-slate-900 dark:text-white">
@@ -296,24 +340,26 @@ export const ProductDetails: React.FC = () => {
           {/* Quantity Selector */}
           <div className="space-y-2">
             <span className="text-xs font-mono text-slate-700 dark:text-neutral-300 uppercase tracking-wider block font-semibold">
-              Quantity
+              Quantity {isOutOfStock ? '(Unavailable)' : `(Max ${stock})`}
             </span>
             <div className="flex items-center gap-3">
               <div className="flex items-center bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 rounded-xl p-1 shadow-sm">
                 <button
                   type="button"
+                  disabled={isOutOfStock || quantity <= 1}
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="p-2 rounded-lg text-slate-500 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                  className="p-2 rounded-lg text-slate-500 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Minus className="w-3.5 h-3.5" />
                 </button>
                 <span className="w-12 text-center font-mono font-bold text-sm text-slate-900 dark:text-white">
-                  {quantity}
+                  {isOutOfStock ? 0 : quantity}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setQuantity(Math.min(20, quantity + 1))}
-                  className="p-2 rounded-lg text-slate-500 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                  disabled={isOutOfStock || quantity >= stock}
+                  onClick={() => setQuantity(Math.min(stock, quantity + 1))}
+                  className="p-2 rounded-lg text-slate-500 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
@@ -322,7 +368,7 @@ export const ProductDetails: React.FC = () => {
               <div className="text-xs text-slate-600 dark:text-neutral-400 font-mono">
                 Total Price:{' '}
                 <b className="text-slate-900 dark:text-white text-sm">
-                  {formatINR(product.price * quantity)}
+                  {formatINR(product.price * (isOutOfStock ? 0 : quantity))}
                 </b>
               </div>
             </div>
@@ -332,11 +378,11 @@ export const ProductDetails: React.FC = () => {
           <div className="pt-4 space-y-2">
             <button
               onClick={handleOrderNow}
-              disabled={!product.is_available}
+              disabled={isOutOfStock}
               className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-xl shadow-cyan-600/20 active:scale-98 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               <ShoppingBag className="w-4.5 h-4.5" />
-              <span>{product.is_available ? 'Order / Buy Now' : 'Currently Unavailable'}</span>
+              <span>{isOutOfStock ? 'Out of Stock' : 'Order / Buy Now'}</span>
             </button>
 
             <div className="flex items-center justify-center gap-4 text-[11px] text-slate-500 dark:text-neutral-400 pt-1 font-mono">

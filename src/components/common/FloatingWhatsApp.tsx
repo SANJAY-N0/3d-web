@@ -1,9 +1,9 @@
 import React from 'react';
 import { MessageSquare } from 'lucide-react';
-import { getSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
+import { useSupportConfig, getWhatsAppLink } from '../../lib/supportConfig';
 
 export const FloatingWhatsApp: React.FC = () => {
-  const support = getSupportConfig();
+  const support = useSupportConfig();
   const whatsappUrl = getWhatsAppLink(support.whatsapp, 'Hello PrintLab 3D! I have a question about 3D printing orders.');
 
   return (

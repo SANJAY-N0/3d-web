@@ -17,12 +17,24 @@ function normalizeProduct(p: any): Product {
     ? p.gallery_images
     : (Array.isArray(p.gallery_urls) && p.gallery_urls.length > 0 ? p.gallery_urls : [mainImg]);
 
+  const stockQty = p.stock_quantity !== undefined && p.stock_quantity !== null
+    ? Number(p.stock_quantity)
+    : (p.stock !== undefined && p.stock !== null ? Number(p.stock) : (p.is_available ? 50 : 0));
+
+  const isAvailable = p.is_available !== false && stockQty > 0;
+
   return {
     ...p,
     image_url: mainImg,
     main_image: mainImg,
     gallery_urls: gallery,
     gallery_images: gallery,
+    stock: stockQty,
+    stock_quantity: stockQty,
+    online_available: p.online_available !== undefined ? Boolean(p.online_available) : true,
+    on_spot_available: p.on_spot_available !== undefined ? Boolean(p.on_spot_available) : true,
+    status: p.status || (isAvailable ? 'ACTIVE' : 'INACTIVE'),
+    is_available: isAvailable,
     public_id: p.public_id || (mainImg.includes('res.cloudinary.com') ? mainImg.split('/upload/')[1]?.replace(/^v\d+\//, '') : undefined),
     gallery_public_ids: p.gallery_public_ids || gallery.map((g: string) => (g.includes('res.cloudinary.com') ? g.split('/upload/')[1]?.replace(/^v\d+\//, '') : '')),
   };

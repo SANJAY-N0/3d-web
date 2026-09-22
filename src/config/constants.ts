@@ -7,7 +7,7 @@ export const APP_CONFIG = {
   currency: 'INR',
   currencySymbol: '₹',
   supportEmail: 'support@printlab.io',
-  supportPhone: '+91 98765 43210',
+  supportPhone: '+91 9894709708',
 } as const;
 
 export const KPR_COLLEGE_CONFIG = {

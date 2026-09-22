@@ -1,4 +1,11 @@
 export type OrderStatus =
+  // Standard Live Orders & POS status values
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'PROCESSING'
+  | 'READY'
+  | 'COMPLETED'
+  | 'CANCELLED'
   // Modern 6-stage tracker
   | 'ORDER_PLACED'
   | 'PAYMENT_PROCESSING'
@@ -7,7 +14,6 @@ export type OrderStatus =
   | 'PRODUCT_READY'
   | 'OUT_FOR_DELIVERY'
   | 'DELIVERED'
-  | 'CANCELLED'
   | 'PAYMENT_EXPIRED'
   | 'PAYMENT_FAILED'
   // Legacy backward-compatibility aliases
@@ -15,15 +21,19 @@ export type OrderStatus =
   | 'PENDING_PAYMENT_VERIFICATION'
   | 'PAYMENT_VERIFIED'
   | 'PRINTING'
-  | 'READY_FOR_PICKUP'
-  | 'COMPLETED';
+  | 'READY_FOR_PICKUP';
+
+export type PaymentMethod = 'CASH' | 'ONLINE' | 'UPI';
 
 export type PaymentStatus =
   | 'PENDING'
+  | 'PAID'
+  | 'FAILED'
+  | 'CASH_PENDING'
+  | 'CASH_RECEIVED'
   | 'SUBMITTED'
   | 'VERIFIED'
   | 'REJECTED'
-  | 'FAILED'
   | 'PENDING_REVIEW';
 
 export type ScreenshotAnalysisStatus =
@@ -69,6 +79,11 @@ export interface Product {
   model_type?: 'mesh_vase' | 'mesh_stand' | 'mesh_keychain' | 'mesh_planter' | 'mesh_miniature' | 'mesh_organizer' | 'custom';
   is_available: boolean;
   is_featured: boolean;
+  stock?: number;
+  stock_quantity?: number;
+  online_available?: boolean;
+  on_spot_available?: boolean;
+  status?: 'ACTIVE' | 'INACTIVE';
   created_at: string;
   updated_at: string;
 }
@@ -190,11 +205,16 @@ export interface PaymentAnalysis {
 export interface Payment extends PaymentAnalysis {
   id: string;
   order_id: string;
+  payment_method?: PaymentMethod;
+  payment_status: PaymentStatus;
   amount: number;
   upi_id?: string;
   transaction_id?: string;
+  payment_gateway?: string;
+  gateway_order_id?: string;
+  gateway_payment_id?: string;
   screenshot_url?: string;
-  payment_status: PaymentStatus;
+  payment_screenshot_url?: string;
   verified_by?: string;
   verified_at?: string;
   admin_notes?: string;
@@ -202,16 +222,36 @@ export interface Payment extends PaymentAnalysis {
   updated_at: string;
 }
 
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  product_id?: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  customization?: CustomizationData;
+  created_at?: string;
+}
+
 export interface Order {
   id: string;
   order_number: string;
   customer_id: string;
+  customer_name?: string;
+  customer_mobile?: string;
+  customer_email?: string;
   product_id: string;
   quantity: number;
   unit_price: number;
+  subtotal?: number;
   total_amount: number;
   customization?: CustomizationData;
+  payment_method?: PaymentMethod;
+  payment_status?: PaymentStatus;
   order_status: OrderStatus;
+  confirmed_at?: string;
+  confirmed_by?: string;
   payment_session_created_at?: string;
   payment_session_expires_at?: string;
   created_at: string;
@@ -220,6 +260,8 @@ export interface Order {
   product?: Product;
   customer?: Customer;
   payment?: Payment;
+  order_items?: OrderItem[];
+  items?: OrderItem[];
 }
 
 export interface CustomerUser {
@@ -281,4 +323,65 @@ export interface ShowcaseItem {
   created_at?: string;
   updated_at?: string;
 }
+
+export interface PosCartItem {
+  product: Product;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+}
+
+export interface PosBillRequest {
+  items: { product_id: string; quantity: number }[];
+  customer_name?: string;
+  customer_mobile?: string;
+  customer_email?: string;
+  payment_method: 'CASH' | 'UPI' | 'ONLINE';
+  cash_received?: number;
+  change_amount?: number;
+  transaction_id?: string;
+  payment_screenshot_url?: string;
+  discount?: number;
+  tax?: number;
+  notes?: string;
+}
+
+export interface BillingTransaction {
+  id: string;
+  bill_number: string;
+  order_id: string;
+  customer_name: string;
+  customer_mobile: string;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total_amount: number;
+  payment_method: PaymentMethod;
+  payment_status: PaymentStatus;
+  billing_status: 'COMPLETED' | 'CANCELLED' | 'REFUNDED';
+  cash_received?: number;
+  change_amount?: number;
+  transaction_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PosBillResponse {
+  success: boolean;
+  bill_number: string;
+  order: Order;
+  payment?: Payment;
+  billing_transaction?: BillingTransaction;
+  items: any[];
+  summary: {
+    subtotal: number;
+    discount: number;
+    tax: number;
+    total_amount: number;
+    cash_received?: number;
+    change_amount?: number;
+  };
+}
+
+
 
